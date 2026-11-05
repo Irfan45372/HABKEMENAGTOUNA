@@ -462,7 +462,7 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                 Otorisasi Panitia HAB ke-81 Kemenag Touna
               </h3>
               <p className="text-xs text-slate-300">
-                Masukkan PIN Panitia untuk mengelola Cabang Lomba, Jadwal Acara, Pin Peta 3D, Satker, serta Logo Resmi HAB ke-81. (PIN Default: <strong className="text-amber-300 font-mono-tabular">812027</strong>)
+                Masukkan PIN Panitia untuk mengelola Cabang Lomba, Jadwal Acara, Pin Peta 3D, Satker, serta Logo Resmi HAB ke-81. (PIN Default: <strong className="text-amber-300 font-mono-tabular"></strong>)
               </p>
             </div>
 
@@ -478,7 +478,7 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                 aria-label="PIN Admin Panitia"
                 value={pinInput}
                 onChange={(e) => setPinInput(e.target.value)}
-                placeholder="Masukkan PIN (812027)"
+                placeholder=""Masukkan PIN Rahasia""
                 className="px-4 py-2.5 rounded-lg bg-[#021b15] border border-emerald-700 text-sm text-white font-mono-tabular text-center focus:outline-none focus:border-amber-400"
               />
               <button
@@ -488,16 +488,7 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                 <Unlock className="w-4 h-4" />
                 <span>Buka Panel</span>
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setPinInput('812027');
-                  setIsUnlocked(true);
-                }}
-                className="px-3.5 py-2.5 rounded-lg bg-emerald-800 hover:bg-emerald-700 text-amber-200 text-xs font-semibold cursor-pointer"
-              >
-                Akses Cepat Demo (812027)
-              </button>
+              
             </form>
           </div>
         ) : (
