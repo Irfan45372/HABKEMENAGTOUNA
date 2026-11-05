@@ -1,0 +1,182 @@
+export type CompetitionCategory =
+  | 'Olahraga'
+  | 'Seni & Budaya'
+  | 'Keagamaan & Akademik'
+  | 'Hiburan / Eksibisi'
+  | string;
+
+export type ParticipantFormat = 'Perorangan/Individu' | 'Ganda' | 'Beregu/Tim';
+
+export type RegistrationStatus = 'Buka' | 'Tutup';
+
+export interface Competition {
+  id: string;
+  nama: string;
+  kategori: CompetitionCategory;
+  jenisPeserta: ParticipantFormat;
+  kuotaPemain: number;
+  statusPendaftaran: RegistrationStatus;
+  juknisUrl: string;
+  jadwalRingkas: string;
+  lokasiId: string;
+  koordinator: string;
+  catatan?: string;
+}
+
+export interface ParticipantRegistration {
+  id: string;
+  competitionId: string;
+  competitionName: string;
+  kategori: string;
+  jenisPeserta: ParticipantFormat;
+  isCustomProposal?: boolean;
+  customCabangName?: string;
+  satker: string;
+  namaTimAtauPeserta: string;
+  ketuaAtauOfficial: string;
+  kontakWhatsapp: string;
+  nipAtauIdentitas: string;
+  daftarPemain: string[];
+  catatanTambahan?: string;
+  waktuDaftar: string;
+  statusVerifikasi: 'Terverifikasi' | 'Menunggu';
+}
+
+export interface MatchScore {
+  id: string;
+  competitionId: string;
+  competitionName: string;
+  babak: string;
+  kontingenA: string;
+  kontingenB: string;
+  skorA: string;
+  skorB: string;
+  waktu: string;
+  lokasi: string;
+  status: 'Sedang Berlangsung' | 'Selesai' | 'Terjadwal';
+}
+
+export interface MedalStanding {
+  id: string;
+  satker: string;
+  emas: number;
+  perak: number;
+  perunggu: number;
+}
+
+export type ScheduleStatus =
+  | 'Terjadwal'
+  | 'Sedang Berlangsung'
+  | 'Ditunda/Pindah Lokasi'
+  | 'Selesai';
+
+export interface ScheduleEvent {
+  id: string;
+  judul: string;
+  kategori: string;
+  tanggal: string;
+  waktu: string;
+  lokasiId: string;
+  lokasiNama: string;
+  pic: string;
+  status: ScheduleStatus;
+  catatan: string;
+}
+
+export type VenueArchetype =
+  | 'kantor_kemenag'
+  | 'lapangan_utama'
+  | 'gor_olahraga'
+  | 'masjid_agung'
+  | 'aula_kerukunan'
+  | 'pelabuhan_kepulauan';
+
+export interface VenueLocation {
+  id: string;
+  nama: string;
+  alamat: string;
+  koordinatX: number; // -35 to 35 on 2.5D map plane
+  koordinatZ: number; // -25 to 25 on 2.5D map plane
+  latitude?: number;
+  longitude?: number;
+  koordinatGps?: string;
+  archetype: VenueArchetype;
+  googleMapsUrl: string;
+  deskripsi: string;
+  kapasitas: string;
+}
+
+export interface BaksosMetric {
+  id: string;
+  namaProgram: string;
+  target: number;
+  capaian: number;
+  satuan: string;
+  lokasi: string;
+  koordinator: string;
+}
+
+export interface JalanSehatCoupon {
+  id: string;
+  nomorKupon: string;
+  namaPeserta: string;
+  satkerAtauUmum: string;
+  nikAtauNip: string;
+  noHp: string;
+  waktuRegistrasi: string;
+  sudahMenang?: boolean;
+  hadiahDimenangkan?: string;
+}
+
+export interface HarmonyMessage {
+  id: string;
+  nama: string;
+  jabatanAtauSatker: string;
+  kategori: 'Ucapan Selamat HAB ke-81' | 'Aspirasi & Saran Panitia' | 'Doa Kerukunan Umat';
+  pesan: string;
+  waktu: string;
+  disetujui: boolean;
+}
+
+export interface NavLabelsConfig {
+  beranda: string;
+  peta: string;
+  lomba: string;
+  jadwal: string;
+  kupon: string;
+}
+
+export interface BrandingConfig {
+  brandWordmark?: string; // Default: "HABKEMENAGTOUNA"
+  tickerBadgeLabel?: string; // Default: "INFO PANITIA"
+  navLabels?: NavLabelsConfig;
+  heroEyebrow?: string; // Default: "Kemenag RI · Kab. Tojo Una-Una"
+  kemenagLogoPrimaryUrl: string;
+  kemenagLogoFallbackUrl: string;
+  habLogoCustomUrl: string; // Empty string = render procedural Gold & Emerald "81" emblem
+  habLogoStatusBadge: string; // e.g., "Logo Sementara — Menunggu Rilis Resmi Pusat"
+  showHabStatusBadge: boolean;
+  officialTitle: string;
+  officialSubtitle: string;
+  officialTagline: string;
+  countdownHeading?: string; // Default: "Hitung Mundur Upacara Puncak HAB ke-81"
+  countdownTargetLabel?: string; // Default: "Target: 03 Jan 2027 · 07:30 WITA"
+  countdownTargetIso: string; // Default: 2027-01-03T07:30:00+08:00
+  runningTextItems: string[];
+  allowCustomCompetitionProposal: boolean;
+  adminPin: string;
+}
+
+export interface AppState {
+  branding: BrandingConfig;
+  competitions: Competition[];
+  satkerList: string[];
+  registrations: ParticipantRegistration[];
+  matches: MatchScore[];
+  medalStandings: MedalStanding[];
+  schedules: ScheduleEvent[];
+  venues: VenueLocation[];
+  baksosMetrics: BaksosMetric[];
+  coupons: JalanSehatCoupon[];
+  messages: HarmonyMessage[];
+}
