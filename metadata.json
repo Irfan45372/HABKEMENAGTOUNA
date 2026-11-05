@@ -2,5 +2,7 @@
   "name": "HAB ke-81 Kemenag Tojo Una-Una 2027",
   "description": "Portal Resmi Peringatan Hari Amal Bakti ke-81 Kementerian Agama Republik Indonesia — Kantor Kementerian Agama Kabupaten Tojo Una-Una Tahun 2027 (HABKEMENAGTOUNA).",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

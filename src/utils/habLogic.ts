@@ -274,6 +274,140 @@ export function pickLuckyDrawWinner(
 }
 
 /**
+ * Extracts a clean YouTube embed URL from any YouTube watch, youtu.be, shorts, live, or embed URL.
+ */
+export function extractYoutubeEmbedUrl(url: string): string | null {
+  if (!url || typeof url !== 'string') return null;
+  const trimmed = url.trim();
+  const patterns = [
+    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/|youtube\.com\/live\/)([A-Za-z0-9_-]{6,15})/,
+    /[?&]v=([A-Za-z0-9_-]{6,15})/,
+  ];
+  for (const regex of patterns) {
+    const match = trimmed.match(regex);
+    if (match && match[1]) {
+      return `https://www.youtube.com/embed/${match[1]}`;
+    }
+  }
+  return null;
+}
+
+/**
+ * Normalizes external image links (such as Google Drive file links or GitHub blob links)
+ * into direct displayable image URLs.
+ */
+export function normalizeBannerImageUrl(url: string): string {
+  if (!url || typeof url !== 'string') return '';
+  const trimmed = url.trim();
+  if (trimmed.startsWith('data:image/')) return trimmed;
+
+  // Handle Google Drive share links: https://drive.google.com/file/d/FILE_ID/view...
+  const driveFileMatch = trimmed.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (driveFileMatch && driveFileMatch[1]) {
+    return `https://lh3.googleusercontent.com/d/${driveFileMatch[1]}`;
+  }
+  const driveIdMatch = trimmed.match(/drive\.google\.com\/open\?id=([a-zA-Z0-9_-]+)/);
+  if (driveIdMatch && driveIdMatch[1]) {
+    return `https://lh3.googleusercontent.com/d/${driveIdMatch[1]}`;
+  }
+
+  // Handle GitHub blob URLs
+  if (trimmed.includes('github.com/') && trimmed.includes('/blob/') && !trimmed.includes('?raw=true')) {
+    return `${trimmed}?raw=true`;
+  }
+
+  return trimmed;
+}
+
+/**
+ * Normalizes audio links from GitHub (blob -> raw) or Google Drive (file share -> direct download/stream)
+ * so HTML5 <audio> can play them directly.
+ */
+export function normalizeAudioUrl(url: string): string {
+  if (!url || typeof url !== 'string') return '';
+  const trimmed = url.trim();
+  if (!trimmed) return '';
+
+  // Convert GitHub blob URL to raw.githubusercontent.com or ?raw=true
+  const ghBlobMatch = trimmed.match(
+    /^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/blob\/(.+)$/
+  );
+  if (ghBlobMatch) {
+    return `https://raw.githubusercontent.com/${ghBlobMatch[1]}/${ghBlobMatch[2]}/${ghBlobMatch[3]}`;
+  }
+
+  // Convert Google Drive share link: https://drive.google.com/file/d/FILE_ID/view...
+  const driveFileMatch = trimmed.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (driveFileMatch && driveFileMatch[1]) {
+    return `https://docs.google.com/uc?export=download&id=${driveFileMatch[1]}`;
+  }
+  const driveIdMatch = trimmed.match(/drive\.google\.com\/open\?id=([a-zA-Z0-9_-]+)/);
+  if (driveIdMatch && driveIdMatch[1]) {
+    return `https://docs.google.com/uc?export=download&id=${driveIdMatch[1]}`;
+  }
+
+  return trimmed;
+}
+
+/**
+ * Compresses an uploaded image file on the client using HTML5 Canvas so that banners and
+ * activity photos stay lightweight (~60-150KB) for localStorage & GitHub JSON sync.
+ */
+export function compressBannerImageFile(
+  file: File,
+  maxWidth: number = 1280,
+  quality: number = 0.78
+): Promise<{ dataUrl: string; sizeKb: number }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Gagal membaca file gambar.'));
+    reader.onload = () => {
+      const resultStr = typeof reader.result === 'string' ? reader.result : '';
+      if (!resultStr) {
+        reject(new Error('Data gambar kosong.'));
+        return;
+      }
+      const img = new Image();
+      img.onerror = () => {
+        // Fallback to raw data URL if image decode fails
+        const rawKb = Math.round(file.size / 1024);
+        resolve({ dataUrl: resultStr, sizeKb: rawKb });
+      };
+      img.onload = () => {
+        try {
+          let targetW = img.width || 1200;
+          let targetH = img.height || 675;
+          if (targetW > maxWidth) {
+            const ratio = maxWidth / targetW;
+            targetW = maxWidth;
+            targetH = Math.max(1, Math.round(targetH * ratio));
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = targetW;
+          canvas.height = targetH;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            resolve({ dataUrl: resultStr, sizeKb: Math.round(file.size / 1024) });
+            return;
+          }
+          ctx.drawImage(img, 0, 0, targetW, targetH);
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
+          const approxBytes = Math.round((compressedDataUrl.length * 3) / 4);
+          resolve({
+            dataUrl: compressedDataUrl,
+            sizeKb: Math.max(1, Math.round(approxBytes / 1024)),
+          });
+        } catch {
+          resolve({ dataUrl: resultStr, sizeKb: Math.round(file.size / 1024) });
+        }
+      };
+      img.src = resultStr;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
  * Validates an imported JSON object to ensure it contains core AppState keys before applying.
  */
 export function validateImportedState(raw: unknown): { valid: boolean; state?: AppState; error?: string } {
@@ -295,3 +429,4 @@ export function validateImportedState(raw: unknown): { valid: boolean; state?: A
   }
   return { valid: true, state: candidate as AppState };
 }
+

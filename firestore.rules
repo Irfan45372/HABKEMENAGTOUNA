@@ -1,0 +1,100 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAdminUser() {
+      return request.auth != null &&
+        request.auth.token.email == "kakakkuganteng@gmail.com" &&
+        request.auth.token.email_verified == true;
+    }
+
+    function isValidPortalConfig(data) {
+      return data.keys().hasAll(['branding', 'competitions', 'schedules']) &&
+        data.branding is map &&
+        data.competitions is list &&
+        data.schedules is list;
+    }
+
+    function isValidRegistration(data) {
+      return data.keys().hasAll(['id', 'competitionId', 'namaLomba', 'satker', 'namaPesertaAtauTim', 'waktuDaftar']) &&
+        data.id is string && data.id.size() > 0 && data.id.size() <= 120 &&
+        data.competitionId is string && data.competitionId.size() > 0 && data.competitionId.size() <= 120 &&
+        data.namaLomba is string && data.namaLomba.size() > 0 && data.namaLomba.size() <= 250 &&
+        data.satker is string && data.satker.size() > 0 && data.satker.size() <= 200 &&
+        data.namaPesertaAtauTim is string && data.namaPesertaAtauTim.size() > 0 && data.namaPesertaAtauTim.size() <= 250 &&
+        data.waktuDaftar is string && data.waktuDaftar.size() <= 100;
+    }
+
+    function isValidCoupon(data) {
+      return data.keys().hasAll(['id', 'nomorKupon', 'namaPeserta', 'satkerAtauUmum', 'waktuCetak']) &&
+        data.id is string && data.id.size() > 0 && data.id.size() <= 120 &&
+        data.nomorKupon is string && data.nomorKupon.size() > 0 && data.nomorKupon.size() <= 60 &&
+        data.namaPeserta is string && data.namaPeserta.size() > 0 && data.namaPeserta.size() <= 200 &&
+        data.satkerAtauUmum is string && data.satkerAtauUmum.size() > 0 && data.satkerAtauUmum.size() <= 200 &&
+        data.waktuCetak is string && data.waktuCetak.size() <= 100;
+    }
+
+    function isValidHarmonyMessage(data) {
+      return data.keys().hasAll(['id', 'namaPengirim', 'satker', 'isiPesan', 'waktu']) &&
+        data.id is string && data.id.size() > 0 && data.id.size() <= 120 &&
+        data.namaPengirim is string && data.namaPengirim.size() > 0 && data.namaPengirim.size() <= 150 &&
+        data.satker is string && data.satker.size() > 0 && data.satker.size() <= 200 &&
+        data.isiPesan is string && data.isiPesan.size() > 0 && data.isiPesan.size() <= 2000 &&
+        data.waktu is string && data.waktu.size() <= 100;
+    }
+
+    function isValidVideo(data) {
+      return data.keys().hasAll(['id', 'judul', 'satker', 'youtubeUrl', 'embedUrl']) &&
+        data.id is string && data.id.size() > 0 && data.id.size() <= 120 &&
+        data.judul is string && data.judul.size() > 0 && data.judul.size() <= 300 &&
+        data.satker is string && data.satker.size() > 0 && data.satker.size() <= 200 &&
+        data.youtubeUrl is string && data.youtubeUrl.size() > 0 && data.youtubeUrl.size() <= 1000 &&
+        data.embedUrl is string && data.embedUrl.size() > 0 && data.embedUrl.size() <= 1000;
+    }
+
+    function isValidSatkerBanner(data) {
+      return data.keys().hasAll(['id', 'judul', 'satker', 'kategori', 'imageUrl']) &&
+        data.id is string && data.id.size() > 0 && data.id.size() <= 120 &&
+        data.judul is string && data.judul.size() > 0 && data.judul.size() <= 300 &&
+        data.satker is string && data.satker.size() > 0 && data.satker.size() <= 200 &&
+        data.kategori is string && data.kategori.size() > 0 && data.kategori.size() <= 120 &&
+        data.imageUrl is string && data.imageUrl.size() > 0 && data.imageUrl.size() <= 900000;
+    }
+
+    match /portalConfig/{docId} {
+      allow read: if true;
+      allow create, update: if isValidPortalConfig(request.resource.data) || isAdminUser();
+      allow delete: if isAdminUser();
+    }
+
+    match /registrations/{regId} {
+      allow read: if true;
+      allow create, update: if isValidRegistration(request.resource.data) || isAdminUser();
+      allow delete: if true;
+    }
+
+    match /coupons/{couponId} {
+      allow read: if true;
+      allow create, update: if isValidCoupon(request.resource.data) || isAdminUser();
+      allow delete: if true;
+    }
+
+    match /messages/{msgId} {
+      allow read: if true;
+      allow create, update: if isValidHarmonyMessage(request.resource.data) || isAdminUser();
+      allow delete: if true;
+    }
+
+    match /videos/{videoId} {
+      allow read: if true;
+      allow create, update: if isValidVideo(request.resource.data) || isAdminUser();
+      allow delete: if true;
+    }
+
+    match /satkerBanners/{bannerId} {
+      allow read: if true;
+      allow create, update: if isValidSatkerBanner(request.resource.data) || isAdminUser();
+      allow delete: if true;
+    }
+  }
+}

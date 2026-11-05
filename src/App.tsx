@@ -3,20 +3,48 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useState } from 'react';
-import { AppState, BrandingConfig, HarmonyMessage, JalanSehatCoupon, NavLabelsConfig, ParticipantRegistration } from './types/hab';
+import React, { useEffect, useRef, useState } from 'react';
+import { AppState, BrandingConfig, Competition, HarmonyMessage, JalanSehatCoupon, NavLabelsConfig, ParticipantRegistration, SatkerBannerItem, VideoItem } from './types/hab';
 import { DEFAULT_APP_STATE, STORAGE_KEY } from './data/defaultState';
 import { HeroScene3D } from './components/HeroScene3D';
 import { VenueMap3D } from './components/VenueMap3D';
 import { CompetitionSection } from './components/CompetitionSection';
 import { ScheduleBaksosSection } from './components/ScheduleBaksosSection';
+import { VideoGallerySection } from './components/VideoGallerySection';
+import { SatkerBannerSection } from './components/SatkerBannerSection';
 import { JalanSehatTwibbonSection } from './components/JalanSehatTwibbonSection';
 import { WallOfHarmonySection } from './components/WallOfHarmonySection';
 import { AdminControlModal } from './components/AdminControlModal';
+import { WelcomeVoicePlayer } from './components/WelcomeVoicePlayer';
 import { Hab81LogoBadge, KemenagLogoImg } from './components/DynamicLogoBadge';
-import { Check, Edit3, Megaphone, Settings } from 'lucide-react';
+import { Check, Cloud, Edit3, Megaphone, Settings } from 'lucide-react';
 
 import { validateImportedState } from './utils/habLogic';
+import {
+  ADMIN_EMAIL,
+  auth,
+  collection,
+  db,
+  deleteCouponFromCloud,
+  deleteHarmonyMessageFromCloud,
+  deleteSatkerBannerFromCloud,
+  deleteVideoFromCloud,
+  doc,
+  getDocFromServer,
+  handleFirestoreError,
+  onAuthStateChanged,
+  onSnapshot,
+  OperationType,
+  saveCouponToCloud,
+  saveHarmonyMessageToCloud,
+  savePortalConfigToCloud,
+  saveRegistrationToCloud,
+  saveSatkerBannerToCloud,
+  saveVideoToCloud,
+  seedInitialStateToCloud,
+  syncFullStateToCloud,
+  User,
+} from './firebase';
 
 const GITHUB_RAW_STATE_URL =
   'https://raw.githubusercontent.com/Irfan45372/HABKEMENAGTOUNA/main/hab81-kemenag-touna-2027-state.json';
@@ -44,26 +72,155 @@ export default function App() {
   const [adminModalOpen, setAdminModalOpen] = useState<boolean>(false);
   const [adminInitialTab, setAdminInitialTab] = useState<number>(0);
   const [isInlineEditMode, setIsInlineEditMode] = useState<boolean>(false);
+  const [isAdminUnlocked, setIsAdminUnlocked] = useState<boolean>(false);
+  const [firebaseConnected, setFirebaseConnected] = useState<boolean>(false);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const initialStateRef = useRef<AppState>(appState);
 
-  // Automatic initial fetch from GitHub repository if visitor has no local state yet
+  // Listen to Firebase Auth state for Admin email (kakakkuganteng@gmail.com)
   useEffect(() => {
-    const hasLocal = window.localStorage.getItem(STORAGE_KEY);
-    if (hasLocal) return;
-    let active = true;
-    fetch(`${GITHUB_RAW_STATE_URL}?t=${Date.now()}`, { cache: 'no-store' })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (!active || !data) return;
-        const validated = validateImportedState(data);
-        if (validated.valid && validated.state) {
-          setAppState(validated.state);
+    const unsubAuth = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+      if (user?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
+        setIsAdminUnlocked(true);
+      }
+    });
+    return () => unsubAuth();
+  }, []);
+
+  // Real-time Firebase Firestore synchronization across all visitors & devices
+  useEffect(() => {
+    let unsubConfig: (() => void) | undefined;
+    let unsubRegs: (() => void) | undefined;
+    let unsubCoupons: (() => void) | undefined;
+    let unsubMessages: (() => void) | undefined;
+    let unsubVideos: (() => void) | undefined;
+    let unsubBanners: (() => void) | undefined;
+    let cancelled = false;
+
+    async function initFirestoreSync() {
+      try {
+        const mainRef = doc(db, 'portalConfig', 'main');
+        const mainSnap = await getDocFromServer(mainRef);
+        if (cancelled) return;
+
+        if (!mainSnap.exists()) {
+          // First time initialization: seed Firestore with current state
+          await seedInitialStateToCloud(initialStateRef.current);
         }
-      })
-      .catch(() => {
-        // Silently keep default seed state ifhab81-kemenag-touna-2027-state.json is not yet uploaded to GitHub
-      });
+        setFirebaseConnected(true);
+      } catch (error) {
+        if (error instanceof Error && error.message.includes('the client is offline')) {
+          console.error('Please check your Firebase configuration. Client is offline.');
+        }
+        // Fallback: check GitHub raw state if Firestore is not reachable yet
+        const hasLocal = window.localStorage.getItem(STORAGE_KEY);
+        if (!hasLocal) {
+          fetch(`${GITHUB_RAW_STATE_URL}?t=${Date.now()}`, { cache: 'no-store' })
+            .then((res) => (res.ok ? res.json() : null))
+            .then((data) => {
+              if (cancelled || !data) return;
+              const validated = validateImportedState(data);
+              if (validated.valid && validated.state) {
+                setAppState(validated.state);
+              }
+            })
+            .catch(() => {});
+        }
+      }
+
+      if (cancelled) return;
+
+      // 1. Subscribe to portalConfig/main
+      unsubConfig = onSnapshot(
+        doc(db, 'portalConfig', 'main'),
+        (snap) => {
+          if (!snap.exists()) return;
+          setFirebaseConnected(true);
+          const data = snap.data();
+          setAppState((prev) => ({
+            ...prev,
+            branding: data.branding || prev.branding,
+            venues: Array.isArray(data.venues) ? data.venues : prev.venues,
+            satkerList: Array.isArray(data.satkerList) ? data.satkerList : prev.satkerList,
+            competitions: Array.isArray(data.competitions) ? data.competitions : prev.competitions,
+            matches: Array.isArray(data.matches) ? data.matches : prev.matches,
+            medalStandings: Array.isArray(data.medalStandings)
+              ? data.medalStandings
+              : prev.medalStandings,
+            schedules: Array.isArray(data.schedules) ? data.schedules : prev.schedules,
+            baksosMetrics: data.baksosMetrics || prev.baksosMetrics,
+          }));
+        },
+        (err) => handleFirestoreError(err, OperationType.GET, 'portalConfig/main')
+      );
+
+      // 2. Subscribe to registrations
+      unsubRegs = onSnapshot(
+        collection(db, 'registrations'),
+        (snap) => {
+          const items = snap.docs.map((d) => d.data() as ParticipantRegistration);
+          items.sort((a, b) => (b.id > a.id ? 1 : -1));
+          setAppState((prev) => ({ ...prev, registrations: items }));
+        },
+        (err) => handleFirestoreError(err, OperationType.LIST, 'registrations')
+      );
+
+      // 3. Subscribe to coupons
+      unsubCoupons = onSnapshot(
+        collection(db, 'coupons'),
+        (snap) => {
+          const items = snap.docs.map((d) => d.data() as JalanSehatCoupon);
+          items.sort((a, b) => (b.nomorKupon > a.nomorKupon ? 1 : -1));
+          setAppState((prev) => ({ ...prev, coupons: items }));
+        },
+        (err) => handleFirestoreError(err, OperationType.LIST, 'coupons')
+      );
+
+      // 4. Subscribe to messages
+      unsubMessages = onSnapshot(
+        collection(db, 'messages'),
+        (snap) => {
+          const items = snap.docs.map((d) => d.data() as HarmonyMessage);
+          items.sort((a, b) => (b.id > a.id ? 1 : -1));
+          setAppState((prev) => ({ ...prev, messages: items }));
+        },
+        (err) => handleFirestoreError(err, OperationType.LIST, 'messages')
+      );
+
+      // 5. Subscribe to videos
+      unsubVideos = onSnapshot(
+        collection(db, 'videos'),
+        (snap) => {
+          const items = snap.docs.map((d) => d.data() as VideoItem);
+          items.sort((a, b) => (b.id > a.id ? 1 : -1));
+          setAppState((prev) => ({ ...prev, videos: items }));
+        },
+        (err) => handleFirestoreError(err, OperationType.LIST, 'videos')
+      );
+
+      // 6. Subscribe to satkerBanners
+      unsubBanners = onSnapshot(
+        collection(db, 'satkerBanners'),
+        (snap) => {
+          const items = snap.docs.map((d) => d.data() as SatkerBannerItem);
+          items.sort((a, b) => (b.id > a.id ? 1 : -1));
+          setAppState((prev) => ({ ...prev, satkerBanners: items }));
+        },
+        (err) => handleFirestoreError(err, OperationType.LIST, 'satkerBanners')
+      );
+    }
+
+    initFirestoreSync();
+
     return () => {
-      active = false;
+      cancelled = true;
+      unsubConfig?.();
+      unsubRegs?.();
+      unsubCoupons?.();
+      unsubMessages?.();
+      unsubVideos?.();
+      unsubBanners?.();
     };
   }, []);
 
@@ -101,11 +258,27 @@ export default function App() {
         newSatkerName && !prev.satkerList.includes(newSatkerName)
           ? [newSatkerName, ...prev.satkerList]
           : prev.satkerList;
-      return {
+      const next = {
         ...prev,
         satkerList: updatedSatkers,
         registrations: [reg, ...prev.registrations],
       };
+      void saveRegistrationToCloud(reg);
+      if (newSatkerName && !prev.satkerList.includes(newSatkerName)) {
+        void savePortalConfigToCloud(next);
+      }
+      return next;
+    });
+  };
+
+  const handleUpdateCompetition = (id: string, partial: Partial<Competition>) => {
+    setAppState((prev) => {
+      const next = {
+        ...prev,
+        competitions: prev.competitions.map((c) => (c.id === id ? { ...c, ...partial } : c)),
+      };
+      void savePortalConfigToCloud(next);
+      return next;
     });
   };
 
@@ -114,17 +287,64 @@ export default function App() {
       ...prev,
       coupons: [coupon, ...prev.coupons],
     }));
+    void saveCouponToCloud(coupon);
   };
 
   const handleMarkCouponWinner = (couponId: string, prizeName: string) => {
+    setAppState((prev) => {
+      let updatedItem: JalanSehatCoupon | undefined;
+      const nextCoupons = prev.coupons.map((c) => {
+        if (c.id === couponId) {
+          updatedItem = { ...c, sudahMenang: true, hadiahDimenangkan: prizeName };
+          return updatedItem;
+        }
+        return c;
+      });
+      if (updatedItem) {
+        void saveCouponToCloud(updatedItem);
+      }
+      return {
+        ...prev,
+        coupons: nextCoupons,
+      };
+    });
+  };
+
+  const handleUpdateCoupon = (
+    couponId: string,
+    updatedFields: Pick<JalanSehatCoupon, 'namaPeserta' | 'satkerAtauUmum' | 'nikAtauNip' | 'noHp'>
+  ) => {
+    setAppState((prev) => {
+      let updatedItem: JalanSehatCoupon | undefined;
+      const nextCoupons = prev.coupons.map((c) => {
+        if (c.id === couponId) {
+          updatedItem = {
+            ...c,
+            namaPeserta: updatedFields.namaPeserta,
+            satkerAtauUmum: updatedFields.satkerAtauUmum,
+            nikAtauNip: updatedFields.nikAtauNip,
+            noHp: updatedFields.noHp,
+          };
+          return updatedItem;
+        }
+        return c;
+      });
+      if (updatedItem) {
+        void saveCouponToCloud(updatedItem);
+      }
+      return {
+        ...prev,
+        coupons: nextCoupons,
+      };
+    });
+  };
+
+  const handleDeleteCoupon = (couponId: string) => {
     setAppState((prev) => ({
       ...prev,
-      coupons: prev.coupons.map((c) =>
-        c.id === couponId
-          ? { ...c, sudahMenang: true, hadiahDimenangkan: prizeName }
-          : c
-      ),
+      coupons: prev.coupons.filter((c) => c.id !== couponId),
     }));
+    void deleteCouponFromCloud(couponId);
   };
 
   const handleAddHarmonyMessage = (msg: HarmonyMessage) => {
@@ -132,6 +352,127 @@ export default function App() {
       ...prev,
       messages: [msg, ...prev.messages],
     }));
+    void saveHarmonyMessageToCloud(msg);
+  };
+
+  const handleUpdateHarmonyMessage = (id: string, partial: Partial<HarmonyMessage>) => {
+    setAppState((prev) => {
+      let updatedItem: HarmonyMessage | undefined;
+      const nextMessages = prev.messages.map((m) => {
+        if (m.id === id) {
+          updatedItem = { ...m, ...partial };
+          return updatedItem;
+        }
+        return m;
+      });
+      if (updatedItem) {
+        void saveHarmonyMessageToCloud(updatedItem);
+      }
+      return {
+        ...prev,
+        messages: nextMessages,
+      };
+    });
+  };
+
+  const handleDeleteHarmonyMessage = (id: string) => {
+    setAppState((prev) => ({
+      ...prev,
+      messages: prev.messages.filter((m) => m.id !== id),
+    }));
+    void deleteHarmonyMessageFromCloud(id);
+  };
+
+  const handleAddVideo = (video: VideoItem) => {
+    setAppState((prev) => ({
+      ...prev,
+      videos: [video, ...(prev.videos || DEFAULT_APP_STATE.videos || [])],
+    }));
+    void saveVideoToCloud(video);
+  };
+
+  const handleUpdateVideo = (id: string, partial: Partial<VideoItem>) => {
+    setAppState((prev) => {
+      const currentVideos = prev.videos || DEFAULT_APP_STATE.videos || [];
+      let updatedItem: VideoItem | undefined;
+      const nextVideos = currentVideos.map((v) => {
+        if (v.id === id) {
+          updatedItem = { ...v, ...partial };
+          return updatedItem;
+        }
+        return v;
+      });
+      if (updatedItem) {
+        void saveVideoToCloud(updatedItem);
+      }
+      return {
+        ...prev,
+        videos: nextVideos,
+      };
+    });
+  };
+
+  const handleDeleteVideo = (id: string) => {
+    setAppState((prev) => {
+      const currentVideos = prev.videos || DEFAULT_APP_STATE.videos || [];
+      return {
+        ...prev,
+        videos: currentVideos.filter((v) => v.id !== id),
+      };
+    });
+    void deleteVideoFromCloud(id);
+  };
+
+  const handleAddSatkerBanner = (banner: SatkerBannerItem, newSatkerName?: string) => {
+    setAppState((prev) => {
+      const updatedSatkers =
+        newSatkerName && !prev.satkerList.includes(newSatkerName)
+          ? [newSatkerName, ...prev.satkerList]
+          : prev.satkerList;
+      const currentBanners = prev.satkerBanners || DEFAULT_APP_STATE.satkerBanners || [];
+      const next = {
+        ...prev,
+        satkerList: updatedSatkers,
+        satkerBanners: [banner, ...currentBanners],
+      };
+      void saveSatkerBannerToCloud(banner);
+      if (newSatkerName && !prev.satkerList.includes(newSatkerName)) {
+        void savePortalConfigToCloud(next);
+      }
+      return next;
+    });
+  };
+
+  const handleUpdateSatkerBanner = (id: string, partial: Partial<SatkerBannerItem>) => {
+    setAppState((prev) => {
+      const currentBanners = prev.satkerBanners || DEFAULT_APP_STATE.satkerBanners || [];
+      let updatedItem: SatkerBannerItem | undefined;
+      const nextBanners = currentBanners.map((b) => {
+        if (b.id === id) {
+          updatedItem = { ...b, ...partial };
+          return updatedItem;
+        }
+        return b;
+      });
+      if (updatedItem) {
+        void saveSatkerBannerToCloud(updatedItem);
+      }
+      return {
+        ...prev,
+        satkerBanners: nextBanners,
+      };
+    });
+  };
+
+  const handleDeleteSatkerBanner = (id: string) => {
+    setAppState((prev) => {
+      const currentBanners = prev.satkerBanners || DEFAULT_APP_STATE.satkerBanners || [];
+      return {
+        ...prev,
+        satkerBanners: currentBanners.filter((b) => b.id !== id),
+      };
+    });
+    void deleteSatkerBannerFromCloud(id);
   };
 
   const handleFocusVenueOnMap = (venueId: string) => {
@@ -150,13 +491,17 @@ export default function App() {
   };
 
   const handleUpdateBranding = (partial: Partial<BrandingConfig>) => {
-    setAppState((prev) => ({
-      ...prev,
-      branding: {
-        ...prev.branding,
-        ...partial,
-      },
-    }));
+    setAppState((prev) => {
+      const next = {
+        ...prev,
+        branding: {
+          ...prev.branding,
+          ...partial,
+        },
+      };
+      void savePortalConfigToCloud(next);
+      return next;
+    });
   };
 
   const handleUpdateNavLabel = (key: keyof NavLabelsConfig, value: string) => {
@@ -168,7 +513,7 @@ export default function App() {
         jadwal: 'Jadwal & Baksos',
         kupon: 'Kupon Jalan Sehat',
       };
-      return {
+      const next = {
         ...prev,
         branding: {
           ...prev.branding,
@@ -178,11 +523,24 @@ export default function App() {
           },
         },
       };
+      void savePortalConfigToCloud(next);
+      return next;
+    });
+  };
+
+  const handleAdminUpdateState = (updater: (prev: AppState) => AppState) => {
+    setAppState((prev) => {
+      const next = updater(prev);
+      void syncFullStateToCloud(next, prev);
+      return next;
     });
   };
 
   const handleResetDefault = () => {
-    setAppState(DEFAULT_APP_STATE);
+    setAppState((prev) => {
+      void syncFullStateToCloud(DEFAULT_APP_STATE, prev);
+      return DEFAULT_APP_STATE;
+    });
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(DEFAULT_APP_STATE));
     } catch {
@@ -412,6 +770,10 @@ export default function App() {
           medalStandings={appState.medalStandings}
           allowCustomProposal={appState.branding.allowCustomCompetitionProposal}
           preselectedCompetitionId={preselectedCompId}
+          adminPin={appState.branding.adminPin}
+          isAdminUnlocked={isAdminUnlocked}
+          onUnlockAdmin={() => setIsAdminUnlocked(true)}
+          onUpdateCompetition={handleUpdateCompetition}
           onAddRegistration={handleAddRegistration}
         />
 
@@ -423,20 +785,53 @@ export default function App() {
           onOpenAdminTab={handleOpenAdminTab}
         />
 
-        {/* 5. Jalan Sehat Kerukunan QR Coupon Generator, Lucky Draw Spinner & Twibbon */}
+        {/* 5. Galeri Video, Dokumentasi & Link YouTube Satker */}
+        <VideoGallerySection
+          videos={appState.videos || DEFAULT_APP_STATE.videos || []}
+          satkerList={appState.satkerList}
+          adminPin={appState.branding.adminPin}
+          isAdminUnlocked={isAdminUnlocked}
+          onUnlockAdmin={() => setIsAdminUnlocked(true)}
+          onAddVideo={handleAddVideo}
+          onUpdateVideo={handleUpdateVideo}
+          onDeleteVideo={handleDeleteVideo}
+          onOpenAdminVideoTab={() => handleOpenAdminTab(3)}
+        />
+
+        {/* 6. Galeri Spanduk, Banner Ucapan & Foto Persiapan/Kegiatan Satker */}
+        <SatkerBannerSection
+          banners={appState.satkerBanners || DEFAULT_APP_STATE.satkerBanners || []}
+          satkerList={appState.satkerList}
+          adminPin={appState.branding.adminPin}
+          isAdminUnlocked={isAdminUnlocked}
+          onUnlockAdmin={() => setIsAdminUnlocked(true)}
+          onAddBanner={handleAddSatkerBanner}
+          onUpdateBanner={handleUpdateSatkerBanner}
+          onDeleteBanner={handleDeleteSatkerBanner}
+          onOpenAdminBannerTab={() => handleOpenAdminTab(3)}
+        />
+
+        {/* 6. Jalan Sehat Kerukunan QR Coupon Generator, Lucky Draw Spinner & Twibbon */}
         <JalanSehatTwibbonSection
           branding={appState.branding}
           satkerList={appState.satkerList}
           coupons={appState.coupons}
           onAddCoupon={handleAddCoupon}
           onMarkCouponWinner={handleMarkCouponWinner}
+          onUpdateCoupon={handleUpdateCoupon}
+          onDeleteCoupon={handleDeleteCoupon}
         />
 
-        {/* 6. Kotak Saran, Aspirasi & Wall of Harmony */}
+        {/* 7. Kotak Saran, Aspirasi & Wall of Harmony */}
         <WallOfHarmonySection
           messages={appState.messages}
           satkerList={appState.satkerList}
+          adminPin={appState.branding.adminPin}
+          isAdminUnlocked={isAdminUnlocked}
+          onUnlockAdmin={() => setIsAdminUnlocked(true)}
           onAddMessage={handleAddHarmonyMessage}
+          onUpdateMessage={handleUpdateHarmonyMessage}
+          onDeleteMessage={handleDeleteHarmonyMessage}
         />
       </main>
 
@@ -459,7 +854,22 @@ export default function App() {
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-4 text-xs text-slate-300">
+          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-300">
+            <span
+              className={`px-3 py-1.5 rounded-lg border text-[11px] font-semibold flex items-center gap-1.5 ${
+                firebaseConnected
+                  ? 'bg-emerald-950/80 border-emerald-700 text-emerald-300'
+                  : 'bg-slate-900 border-slate-700 text-slate-400'
+              }`}
+              title="Status Sinkronisasi Database Cloud Firebase"
+            >
+              <Cloud className="w-3.5 h-3.5 text-amber-300" />
+              <span>
+                {firebaseConnected
+                  ? 'Firebase Cloud Database Aktif (Real-time)'
+                  : 'Menghubungkan Firebase Cloud...'}
+              </span>
+            </span>
             <button
               type="button"
               onClick={() => handleOpenAdminTab(0)}
@@ -472,13 +882,21 @@ export default function App() {
         </div>
       </footer>
 
+      {/* Welcome Voice / Audio Greeting Player */}
+      <WelcomeVoicePlayer
+        config={appState.branding.welcomeVoice}
+        onOpenAdminSettings={() => handleOpenAdminTab(4)}
+      />
+
       {/* Quick Admin Control Panel Modal */}
       <AdminControlModal
         isOpen={adminModalOpen}
         initialTab={adminInitialTab}
         appState={appState}
+        firebaseConnected={firebaseConnected}
+        currentUser={currentUser}
         onClose={() => setAdminModalOpen(false)}
-        onUpdateState={setAppState}
+        onUpdateState={handleAdminUpdateState}
         onResetDefault={handleResetDefault}
         onActivateInlineEdit={() => {
           setAdminModalOpen(false);

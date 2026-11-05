@@ -12,15 +12,23 @@ import {
 } from './DynamicLogoBadge';
 import {
   Camera,
+  Check,
   CheckCircle2,
   Download,
+  Edit3,
   Gift,
+  Lock,
   QrCode,
   RefreshCw,
+  Search,
+  ShieldCheck,
   Sparkles,
   Ticket,
+  Trash2,
   Trophy,
   Upload,
+  X,
+  XCircle,
 } from 'lucide-react';
 
 interface JalanSehatTwibbonSectionProps {
@@ -29,6 +37,11 @@ interface JalanSehatTwibbonSectionProps {
   coupons: JalanSehatCoupon[];
   onAddCoupon: (coupon: JalanSehatCoupon) => void;
   onMarkCouponWinner: (couponId: string, prizeName: string) => void;
+  onUpdateCoupon?: (
+    couponId: string,
+    updatedFields: Pick<JalanSehatCoupon, 'namaPeserta' | 'satkerAtauUmum' | 'nikAtauNip' | 'noHp'>
+  ) => void;
+  onDeleteCoupon?: (couponId: string) => void;
 }
 
 export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> = ({
@@ -37,8 +50,10 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
   coupons,
   onAddCoupon,
   onMarkCouponWinner,
+  onUpdateCoupon,
+  onDeleteCoupon,
 }) => {
-  const [activeMode, setActiveMode] = useState<'kupon' | 'twibbon'>('kupon');
+  const [activeMode, setActiveMode] = useState<'kupon' | 'verifikasi' | 'twibbon'>('kupon');
 
   // Coupon Registration Form State
   const [namaPeserta, setNamaPeserta] = useState<string>('');
@@ -46,6 +61,22 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
   const [nikAtauNip, setNikAtauNip] = useState<string>('');
   const [noHp, setNoHp] = useState<string>('');
   const [couponError, setCouponError] = useState<string | null>(null);
+
+  // Inline Edit State for Participant Data (Nomor Undian & Barcode Locked)
+  const [isEditingActiveCoupon, setIsEditingActiveCoupon] = useState<boolean>(false);
+  const [editNama, setEditNama] = useState<string>('');
+  const [editSatker, setEditSatker] = useState<string>('');
+  const [editNik, setEditNik] = useState<string>('');
+  const [editHp, setEditHp] = useState<string>('');
+  const [editNotice, setEditNotice] = useState<string | null>(null);
+
+  // Verification / Scanner State
+  const [verifyQuery, setVerifyQuery] = useState<string>('');
+  const [verifiedCoupon, setVerifiedCoupon] = useState<JalanSehatCoupon | null>(null);
+  const [verifySearched, setVerifySearched] = useState<boolean>(false);
+  const [cameraActive, setCameraActive] = useState<boolean>(false);
+  const [cameraStatus, setCameraStatus] = useState<string | null>(null);
+  const videoScannerRef = useRef<HTMLVideoElement | null>(null);
 
   // Currently previewed coupon on the Digital Ticket Canvas
   const [activeCoupon, setActiveCoupon] = useState<JalanSehatCoupon>(
@@ -60,6 +91,16 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
         waktuRegistrasi: '10 Nov 2026, 08:15 WITA',
       }
   );
+
+  // Sync activeCoupon when coupons array updates (e.g., after edit or delete)
+  useEffect(() => {
+    const updated = coupons.find((c) => c.id === activeCoupon.id);
+    if (updated) {
+      setActiveCoupon(updated);
+    } else if (coupons.length > 0) {
+      setActiveCoupon(coupons[0]);
+    }
+  }, [coupons]);
 
   const ticketCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -83,6 +124,169 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
   const [twibbonPhotoUrl, setTwibbonPhotoUrl] = useState<string>('');
   const twibbonCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
+  // Check URL query parameter ?kupon=... when scanned from phone camera QR
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const scannedKupon = params.get('kupon');
+      if (scannedKupon) {
+        const clean = scannedKupon.trim().toUpperCase();
+        setVerifyQuery(clean);
+        const found =
+          coupons.find(
+            (c) =>
+              c.nomorKupon.toUpperCase() === clean ||
+              c.nomorKupon.toUpperCase().includes(clean)
+          ) || null;
+        setVerifiedCoupon(found);
+        setVerifySearched(true);
+        setActiveMode('verifikasi');
+        const el = document.getElementById('jalan-sehat');
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth' });
+        }
+      }
+    } catch {
+      // Ignore URL parse errors
+    }
+  }, [coupons]);
+
+  // Stop camera stream when leaving verification mode
+  useEffect(() => {
+    if (activeMode !== 'verifikasi' && cameraActive) {
+      stopCameraScanner();
+    }
+    return () => {
+      stopCameraScanner();
+    };
+  }, [activeMode]);
+
+  const stopCameraScanner = () => {
+    setCameraActive(false);
+    const vid = videoScannerRef.current;
+    if (vid && vid.srcObject) {
+      const stream = vid.srcObject as MediaStream;
+      stream.getTracks().forEach((t) => t.stop());
+      vid.srcObject = null;
+    }
+  };
+
+  const runCouponLookup = (rawInput: string) => {
+    const clean = rawInput.trim();
+    if (!clean) return;
+    let token = clean;
+    if (clean.includes('kupon=')) {
+      const match = clean.match(/kupon=([A-Za-z0-9-]+)/i);
+      if (match?.[1]) token = match[1];
+    } else if (clean.includes('|')) {
+      token = clean.split('|')[0].trim();
+    }
+    const upper = token.toUpperCase();
+    const found =
+      coupons.find(
+        (c) =>
+          c.nomorKupon.toUpperCase() === upper ||
+          c.nomorKupon.toUpperCase().includes(upper) ||
+          c.nikAtauNip.toLowerCase() === clean.toLowerCase() ||
+          c.namaPeserta.toLowerCase().includes(clean.toLowerCase())
+      ) || null;
+    setVerifyQuery(token);
+    setVerifiedCoupon(found);
+    setVerifySearched(true);
+  };
+
+  const handleStartCameraScanner = async () => {
+    setCameraStatus(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment' },
+      });
+      setCameraActive(true);
+      setCameraStatus('Arahkan kamera ke Kode QR pada Kupon Peserta...');
+      window.setTimeout(() => {
+        if (videoScannerRef.current) {
+          videoScannerRef.current.srcObject = stream;
+          videoScannerRef.current.play().catch(() => {});
+        }
+      }, 100);
+
+      const WinWithBarcode = window as unknown as {
+        BarcodeDetector?: new (opts: { formats: string[] }) => {
+          detect: (source: HTMLVideoElement) => Promise<Array<{ rawValue: string }>>;
+        };
+      };
+
+      if (WinWithBarcode.BarcodeDetector) {
+        const detector = new WinWithBarcode.BarcodeDetector({ formats: ['qr_code'] });
+        const scanInterval = window.setInterval(async () => {
+          const vid = videoScannerRef.current;
+          if (!vid || vid.readyState < 2) return;
+          try {
+            const barcodes = await detector.detect(vid);
+            if (barcodes.length > 0 && barcodes[0].rawValue) {
+              window.clearInterval(scanInterval);
+              stopCameraScanner();
+              runCouponLookup(barcodes[0].rawValue);
+            }
+          } catch {
+            // Continue scanning frames
+          }
+        }, 400);
+      } else {
+        setCameraStatus(
+          'Kamera aktif. Jika browser Anda belum mendukung auto-detect, Anda juga bisa memindai QR langsung dari aplikasi Kamera HP bawaan atau mengetik 4 angka kupon di bawah.'
+        );
+      }
+    } catch {
+      setCameraStatus(
+        'Izin kamera belum diberikan atau perangkat tidak memiliki kamera. Gunakan kotak pencarian Nomor Kupon / NIP di bawah.'
+      );
+    }
+  };
+
+  // Start editing active coupon participant details (Nomor Undian & Barcode stay locked)
+  const handleStartEditCoupon = (target: JalanSehatCoupon) => {
+    setActiveCoupon(target);
+    setEditNama(target.namaPeserta);
+    setEditSatker(target.satkerAtauUmum);
+    setEditNik(target.nikAtauNip);
+    setEditHp(target.noHp);
+    setIsEditingActiveCoupon(true);
+    setEditNotice(null);
+  };
+
+  const handleSaveEditCoupon = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editNama.trim() || editNama.trim().length < 2) return;
+    const updatedFields = {
+      namaPeserta: editNama.trim(),
+      satkerAtauUmum: editSatker.trim() || 'Masyarakat Umum',
+      nikAtauNip: editNik.trim() || '-',
+      noHp: editHp.trim() || '-',
+    };
+    if (onUpdateCoupon) {
+      onUpdateCoupon(activeCoupon.id, updatedFields);
+    }
+    setActiveCoupon((prev) => ({
+      ...prev,
+      ...updatedFields,
+      // nomorKupon & id remain strictly locked!
+    }));
+    setIsEditingActiveCoupon(false);
+    setEditNotice(
+      `Data peserta berhasil diperbarui. Nomor Undian (${activeCoupon.nomorKupon}) & Barcode QR tetap permanen.`
+    );
+    window.setTimeout(() => setEditNotice(null), 4000);
+  };
+
+  const handleDeleteCouponItem = (couponId: string, nomorKupon: string) => {
+    if (onDeleteCoupon) {
+      onDeleteCoupon(couponId);
+      setEditNotice(`Kupon ${nomorKupon} telah dihapus dari daftar.`);
+      window.setTimeout(() => setEditNotice(null), 3500);
+    }
+  };
+
   // Render High-Res Digital Ticket Card on HTML5 Canvas whenever activeCoupon or branding changes
   useEffect(() => {
     let cancelled = false;
@@ -92,11 +296,22 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
 
-      const [kemenagImg, habImg] = await Promise.all([
+      // QR Code depends EXCLUSIVELY on activeCoupon.nomorKupon so editing name/NIP never changes the barcode!
+      const baseSiteUrl =
+        typeof window !== 'undefined'
+          ? `${window.location.origin}${window.location.pathname}`
+          : 'https://irfan45372.github.io/HABKEMENAGTOUNA/';
+      const qrPayloadUrl = `${baseSiteUrl}?kupon=${encodeURIComponent(activeCoupon.nomorKupon)}#jalan-sehat`;
+      const realQrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=210x210&margin=0&color=022c22&bgcolor=ffffff&data=${encodeURIComponent(
+        qrPayloadUrl
+      )}`;
+
+      const [kemenagImg, habImg, realQrImg] = await Promise.all([
         loadAnonymousImage(branding.kemenagLogoPrimaryUrl, branding.kemenagLogoFallbackUrl),
         branding.habLogoCustomUrl
           ? loadAnonymousImage(branding.habLogoCustomUrl)
           : Promise.resolve(null),
+        loadAnonymousImage(realQrApiUrl),
       ]);
       if (cancelled) return;
 
@@ -199,10 +414,7 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
         378
       );
 
-      // Right Stub: Deterministic 21x21 QR Code Matrix
-      const qrMatrix = generateQrMatrix(
-        `${activeCoupon.nomorKupon}|${activeCoupon.namaPeserta}|HAB81TOUNA`
-      );
+      // Right Stub: Real Scannable QR Code (with deterministic offline matrix fallback keyed ONLY by nomorKupon)
       const qrBoxSize = 189; // 21 * 9
       const qrX = 645;
       const qrY = 76;
@@ -213,12 +425,17 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
       ctx.lineWidth = 3;
       ctx.strokeRect(qrX - 12, qrY - 12, qrBoxSize + 24, qrBoxSize + 24);
 
-      const cell = 9;
-      ctx.fillStyle = '#022c22';
-      for (let r = 0; r < qrMatrix.length; r++) {
-        for (let c = 0; c < qrMatrix[r].length; c++) {
-          if (qrMatrix[r][c] === 1) {
-            ctx.fillRect(qrX + c * cell, qrY + r * cell, cell, cell);
+      if (realQrImg) {
+        ctx.drawImage(realQrImg, qrX, qrY, qrBoxSize, qrBoxSize);
+      } else {
+        const qrMatrix = generateQrMatrix(`${activeCoupon.nomorKupon}|HAB81TOUNA`);
+        const cell = 9;
+        ctx.fillStyle = '#022c22';
+        for (let r = 0; r < qrMatrix.length; r++) {
+          for (let c = 0; c < qrMatrix[r].length; c++) {
+            if (qrMatrix[r][c] === 1) {
+              ctx.fillRect(qrX + c * cell, qrY + r * cell, cell, cell);
+            }
           }
         }
       }
@@ -282,7 +499,6 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
       ctx.clip();
 
       if (userPhoto) {
-        // Cover-fit user photo inside circle
         const scale = Math.max(
           (radius * 2) / userPhoto.width,
           (radius * 2) / userPhoto.height
@@ -291,7 +507,6 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
         const dh = userPhoto.height * scale;
         ctx.drawImage(userPhoto, cx - dw / 2, cy - dh / 2, dw, dh);
       } else {
-        // Festive Kemenag Silhouette Avatar
         const pGrad = ctx.createLinearGradient(cx, cy - radius, cx, cy + radius);
         pGrad.addColorStop(0, '#065f46');
         pGrad.addColorStop(1, '#022c22');
@@ -383,7 +598,13 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
       return;
     }
 
-    const nextSeq = coupons.length + 1;
+    // Ensure unique sequence number based on highest existing sequence
+    const maxExistingSeq = coupons.reduce((max, c) => {
+      const parts = c.nomorKupon.split('-');
+      const seqNum = parts.length >= 3 ? parseInt(parts[2], 10) : 0;
+      return !Number.isNaN(seqNum) && seqNum > max ? seqNum : max;
+    }, 0);
+    const nextSeq = maxExistingSeq + 1;
     const ticketNum = generateJalanSehatTicketNumber(nextSeq, nikAtauNip);
     const newCoupon: JalanSehatCoupon = {
       id: `cpn-${Date.now()}`,
@@ -441,7 +662,7 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
     reader.readAsDataURL(file);
   };
 
-  // Lucky Draw Spinner Handler
+  // Lucky Draw Spinner Handler — Automatically removes drawn coupon from Daftar Undian Aktif!
   const handleStartSpin = () => {
     const eligible = coupons.filter((c) => !c.sudahMenang);
     if (eligible.length === 0 || isSpinning) return;
@@ -464,6 +685,7 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
           setRollingTicketDisplay(winner.nomorKupon);
           setRollingNameDisplay(`${winner.namaPeserta} — ${winner.satkerAtauUmum}`);
           setDrawnWinner(winner);
+          // Mark coupon as won so it is immediately removed from Daftar Undian Aktif
           onMarkCouponWinner(winner.id, prizeInput);
         }
         setIsSpinning(false);
@@ -471,7 +693,8 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
     }, 65);
   };
 
-  const eligibleCount = coupons.filter((c) => !c.sudahMenang).length;
+  const eligibleCoupons = coupons.filter((c) => !c.sudahMenang);
+  const eligibleCount = eligibleCoupons.length;
   const winnersList = coupons.filter((c) => c.sudahMenang);
 
   return (
@@ -490,14 +713,14 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
             Jalan Sehat Kerukunan, Kupon QR Digital & Twibbon HAB ke-81
           </h2>
           <p className="text-sm text-slate-300 mt-1.5 max-w-2xl">
-            Dapatkan Kupon QR Digital resmi dengan Nomor Tiket unik untuk pengundian Doorprize Panggung Utama, atau buat Bingkai Twibbon ucapan selamat HAB ke-81.
+            Dapatkan Kupon QR Digital resmi dengan Nomor Tiket unik untuk pengundian Doorprize Panggung Utama, verifikasi keaslian kupon, atau buat Bingkai Twibbon ucapan selamat HAB ke-81.
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <div
             role="tablist"
-            className="flex items-center gap-1.5 bg-[#03221a] p-1.5 rounded-xl border border-emerald-800/80"
+            className="flex flex-wrap items-center gap-1.5 bg-[#03221a] p-1.5 rounded-xl border border-emerald-800/80"
           >
             <button
               role="tab"
@@ -511,7 +734,21 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
               }`}
             >
               <Ticket className="w-3.5 h-3.5" />
-              <span>Generator Kupon QR Digital</span>
+              <span>Generator Kupon QR</span>
+            </button>
+            <button
+              role="tab"
+              aria-selected={activeMode === 'verifikasi'}
+              type="button"
+              onClick={() => setActiveMode('verifikasi')}
+              className={`px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+                activeMode === 'verifikasi'
+                  ? 'bg-amber-400 text-slate-950'
+                  : 'text-slate-300 hover:text-white'
+              }`}
+            >
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>Scan & Verifikasi Panitia</span>
             </button>
             <button
               role="tab"
@@ -535,7 +772,7 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
             className="px-4 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-amber-200 border border-amber-400/40 text-xs font-bold flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-md"
           >
             <Gift className="w-4 h-4 text-amber-300" />
-            <span>Mesin Undian Doorprize ({coupons.length} Kupon)</span>
+            <span>Mesin Undian Doorprize ({eligibleCount} Antrean Aktif)</span>
           </button>
         </div>
       </div>
@@ -543,138 +780,178 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
       {/* MODE 1: JALAN SEHAT QR COUPON GENERATOR */}
       {activeMode === 'kupon' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-          {/* Left 5 Cols: Quick Registration Form */}
-          <form
-            onSubmit={handleGenerateCoupon}
-            className="lg:col-span-5 bg-[#03251c] border border-emerald-800/80 rounded-2xl p-6 space-y-4"
-          >
-            <div className="border-b border-emerald-800/70 pb-3">
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <QrCode className="w-4 h-4 text-amber-400" />
-                Registrasi Cepat Kupon Jalan Sehat
-              </h3>
-              <p className="text-xs text-slate-300 mt-0.5">
-                Isi data diri untuk menerbitkan kartu kupon digital ber-QR Code
-              </p>
-            </div>
-
-            {couponError && (
-              <div
-                role="alert"
-                className="p-3 rounded-lg bg-rose-950/90 border border-rose-500/50 text-xs text-rose-200"
-              >
-                {couponError}
+          {/* Left 5 Cols: Quick Registration Form & Active Draw Queue */}
+          <div className="lg:col-span-5 bg-[#03251c] border border-emerald-800/80 rounded-2xl p-6 space-y-4">
+            <form onSubmit={handleGenerateCoupon} className="space-y-4">
+              <div className="border-b border-emerald-800/70 pb-3">
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <QrCode className="w-4 h-4 text-amber-400" />
+                  Registrasi Cepat Kupon Jalan Sehat
+                </h3>
+                <p className="text-xs text-slate-300 mt-0.5">
+                  Isi data diri untuk menerbitkan kartu kupon digital ber-QR Code resmi
+                </p>
               </div>
-            )}
 
-            <div>
-              <label
-                htmlFor="cpn-name"
-                className="block text-xs font-semibold text-slate-200 mb-1"
-              >
-                Nama Lengkap Peserta *
-              </label>
-              <input
-                id="cpn-name"
-                type="text"
-                value={namaPeserta}
-                onChange={(e) => setNamaPeserta(e.target.value)}
-                placeholder="Contoh: Drs. H. Muh. Syahrir, M.H."
-                className="w-full px-3.5 py-2 rounded-lg bg-[#021b15] border border-emerald-700/80 text-sm text-white focus:outline-none focus:border-amber-400"
-              />
-            </div>
+              {couponError && (
+                <div
+                  role="alert"
+                  className="p-3 rounded-lg bg-rose-950/90 border border-rose-500/50 text-xs text-rose-200"
+                >
+                  {couponError}
+                </div>
+              )}
 
-            <div>
-              <label
-                htmlFor="cpn-satker"
-                className="block text-xs font-semibold text-slate-200 mb-1"
-              >
-                Satker / KUA / Madrasah / Masyarakat Umum *
-              </label>
-              <select
-                id="cpn-satker"
-                value={satkerAtauUmum}
-                onChange={(e) => setSatkerAtauUmum(e.target.value)}
-                className="w-full px-3.5 py-2 rounded-lg bg-[#021b15] border border-emerald-700/80 text-sm text-white focus:outline-none focus:border-amber-400"
-              >
-                {satkerList.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label
-                  htmlFor="cpn-nik"
+                  htmlFor="cpn-name"
                   className="block text-xs font-semibold text-slate-200 mb-1"
                 >
-                  NIP / NIK (Min. 4 Digit) *
+                  Nama Lengkap Peserta *
                 </label>
                 <input
-                  id="cpn-nik"
+                  id="cpn-name"
                   type="text"
-                  value={nikAtauNip}
-                  onChange={(e) => setNikAtauNip(e.target.value)}
-                  placeholder="19850101..."
+                  value={namaPeserta}
+                  onChange={(e) => setNamaPeserta(e.target.value)}
+                  placeholder="Contoh: Drs. H. Muh. Syahrir, M.H."
                   className="w-full px-3.5 py-2 rounded-lg bg-[#021b15] border border-emerald-700/80 text-sm text-white focus:outline-none focus:border-amber-400"
                 />
               </div>
+
               <div>
                 <label
-                  htmlFor="cpn-hp"
+                  htmlFor="cpn-satker"
                   className="block text-xs font-semibold text-slate-200 mb-1"
                 >
-                  Nomor HP / WhatsApp
+                  Satker / KUA / Madrasah / Masyarakat Umum *
                 </label>
-                <input
-                  id="cpn-hp"
-                  type="tel"
-                  value={noHp}
-                  onChange={(e) => setNoHp(e.target.value)}
-                  placeholder="0812..."
+                <select
+                  id="cpn-satker"
+                  value={satkerAtauUmum}
+                  onChange={(e) => setSatkerAtauUmum(e.target.value)}
                   className="w-full px-3.5 py-2 rounded-lg bg-[#021b15] border border-emerald-700/80 text-sm text-white focus:outline-none focus:border-amber-400"
-                />
+                >
+                  {satkerList.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
               </div>
-            </div>
 
-            <button
-              type="submit"
-              className="w-full py-2.5 px-4 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-sm transition-colors cursor-pointer shadow-md"
-            >
-              Terbitkan Kupon QR Digital Sekarang
-            </button>
-
-            {/* Recent Coupons Switcher */}
-            <div className="pt-3 border-t border-emerald-800/70">
-              <div className="text-xs font-semibold text-emerald-300 mb-2">
-                Kupon Terbit Terbaru (Klik untuk Pratinjau):
-              </div>
-              <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
-                {coupons.slice(0, 8).map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => setActiveCoupon(c)}
-                    className={`w-full text-left px-3 py-2 rounded-lg text-xs flex items-center justify-between transition-colors cursor-pointer ${
-                      activeCoupon.id === c.id
-                        ? 'bg-emerald-800/80 text-white border border-amber-400/50'
-                        : 'bg-[#021b15] text-slate-300 hover:text-white'
-                    }`}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label
+                    htmlFor="cpn-nik"
+                    className="block text-xs font-semibold text-slate-200 mb-1"
                   >
-                    <span className="truncate font-medium">{c.namaPeserta}</span>
-                    <span className="font-mono-tabular text-amber-300 shrink-0 ml-2">
-                      {c.nomorKupon}
-                    </span>
-                  </button>
-                ))}
+                    NIP / NIK (Min. 4 Digit) *
+                  </label>
+                  <input
+                    id="cpn-nik"
+                    type="text"
+                    value={nikAtauNip}
+                    onChange={(e) => setNikAtauNip(e.target.value)}
+                    placeholder="19850101..."
+                    className="w-full px-3.5 py-2 rounded-lg bg-[#021b15] border border-emerald-700/80 text-sm text-white focus:outline-none focus:border-amber-400"
+                  />
+                </div>
+                <div>
+                  <label
+                    htmlFor="cpn-hp"
+                    className="block text-xs font-semibold text-slate-200 mb-1"
+                  >
+                    Nomor HP / WhatsApp
+                  </label>
+                  <input
+                    id="cpn-hp"
+                    type="tel"
+                    value={noHp}
+                    onChange={(e) => setNoHp(e.target.value)}
+                    placeholder="0812..."
+                    className="w-full px-3.5 py-2 rounded-lg bg-[#021b15] border border-emerald-700/80 text-sm text-white focus:outline-none focus:border-amber-400"
+                  />
+                </div>
               </div>
-            </div>
-          </form>
 
-          {/* Right 7 Cols: Live Digital Ticket Canvas & Download */}
+              <button
+                type="submit"
+                className="w-full py-2.5 px-4 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-sm transition-colors cursor-pointer shadow-md"
+              >
+                Terbitkan Kupon QR Digital Sekarang
+              </button>
+            </form>
+
+            {/* Active Draw Queue List (Coupons that have been drawn automatically leave this list) */}
+            <div className="pt-3 border-t border-emerald-800/70 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="text-xs font-semibold text-emerald-300">
+                  Daftar Undian Aktif ({eligibleCoupons.length} Kupon Belum Diundi):
+                </div>
+                <span className="text-[10px] text-slate-400">
+                  Klik Edit/Hapus jika data keliru
+                </span>
+              </div>
+
+              {eligibleCoupons.length === 0 ? (
+                <div className="p-3 rounded-lg bg-[#021b15] text-xs text-slate-400 text-center">
+                  Seluruh kupon telah selesai diundi atau belum ada kupon aktif.
+                </div>
+              ) : (
+                <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                  {eligibleCoupons.map((c) => (
+                    <div
+                      key={c.id}
+                      className={`px-3 py-2 rounded-lg text-xs flex items-center justify-between gap-2 transition-colors ${
+                        activeCoupon.id === c.id
+                          ? 'bg-emerald-800/80 text-white border border-amber-400/50'
+                          : 'bg-[#021b15] text-slate-300 hover:text-white'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveCoupon(c);
+                          setIsEditingActiveCoupon(false);
+                        }}
+                        className="flex-1 text-left min-w-0 cursor-pointer"
+                      >
+                        <div className="truncate font-semibold">{c.namaPeserta}</div>
+                        <div className="font-mono-tabular text-[11px] text-amber-300">
+                          {c.nomorKupon} · {c.satkerAtauUmum}
+                        </div>
+                      </button>
+
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleStartEditCoupon(c)}
+                          title="Edit Nama / Data Peserta (Nomor Undian & Barcode Terkunci)"
+                          className="px-2 py-1 rounded bg-[#03251c] hover:bg-emerald-900 border border-emerald-700 text-amber-300 text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
+                        >
+                          <Edit3 className="w-3 h-3" />
+                          <span>Edit</span>
+                        </button>
+                        {onDeleteCoupon && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteCouponItem(c.id, c.nomorKupon)}
+                            title="Hapus Kupon"
+                            className="p-1.5 rounded bg-rose-950/90 hover:bg-rose-900 text-rose-300 cursor-pointer"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Right 7 Cols: Live Digital Ticket Canvas, Edit Participant Data & Download */}
           <div className="lg:col-span-7 bg-[#03251c] border border-emerald-800/80 rounded-2xl p-6 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-emerald-800/70 pb-3">
               <div>
@@ -689,15 +966,165 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
                 </h3>
               </div>
 
-              <button
-                type="button"
-                onClick={handleDownloadTicketPng}
-                className="px-4 py-2 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-sm"
-              >
-                <Download className="w-4 h-4" />
-                Unduh Kupon PNG
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (isEditingActiveCoupon) {
+                      setIsEditingActiveCoupon(false);
+                    } else {
+                      handleStartEditCoupon(activeCoupon);
+                    }
+                  }}
+                  className="px-3 py-2 rounded-lg bg-[#021b15] hover:bg-emerald-900 border border-amber-400/50 text-amber-300 font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                  <span>{isEditingActiveCoupon ? 'Batal Edit' : 'Edit Data Peserta'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    runCouponLookup(activeCoupon.nomorKupon);
+                    setActiveMode('verifikasi');
+                  }}
+                  className="px-3 py-2 rounded-lg bg-[#021b15] hover:bg-emerald-900 border border-emerald-700 text-emerald-300 font-semibold text-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>Uji Verifikasi</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDownloadTicketPng}
+                  className="px-4 py-2 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-sm"
+                >
+                  <Download className="w-4 h-4" />
+                  Unduh Kupon PNG
+                </button>
+              </div>
             </div>
+
+            {editNotice && (
+              <div className="p-3 rounded-xl bg-emerald-950/90 border border-emerald-500/60 text-xs text-emerald-200 flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-amber-300 shrink-0" />
+                <span>{editNotice}</span>
+              </div>
+            )}
+
+            {/* Inline Editor for Participant Data (Nomor Undian & QR Barcode Locked) */}
+            {isEditingActiveCoupon && (
+              <form
+                onSubmit={handleSaveEditCoupon}
+                className="bg-[#021b15] border-2 border-amber-400/70 rounded-xl p-4 space-y-3"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-800/80 pb-2">
+                  <div className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                    <Edit3 className="w-3.5 h-3.5" />
+                    <span>Koreksi Data Peserta Kupon (Nama / Satker / NIP / No. HP)</span>
+                  </div>
+                  <span className="px-2.5 py-0.5 rounded bg-emerald-950 border border-emerald-700 text-[11px] text-emerald-300 font-mono-tabular flex items-center gap-1">
+                    <Lock className="w-3 h-3 text-amber-400" />
+                    Nomor & Barcode Terkunci: {activeCoupon.nomorKupon}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <label className="block text-[11px] text-slate-400 mb-1">
+                      Nomor Undian & Barcode QR (Terkunci Permanen)
+                    </label>
+                    <input
+                      type="text"
+                      value={activeCoupon.nomorKupon}
+                      disabled
+                      readOnly
+                      className="w-full px-3 py-2 rounded-lg bg-slate-900/90 border border-slate-700 text-amber-300/80 font-mono-tabular font-bold cursor-not-allowed"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] text-slate-200 mb-1">
+                      Nama Lengkap Peserta *
+                    </label>
+                    <input
+                      type="text"
+                      value={editNama}
+                      onChange={(e) => setEditNama(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg bg-[#03251c] border border-emerald-700 text-white font-semibold focus:outline-none focus:border-amber-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] text-slate-200 mb-1">
+                      Satker / Utusan / Umum
+                    </label>
+                    <input
+                      type="text"
+                      value={editSatker}
+                      onChange={(e) => setEditSatker(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg bg-[#03251c] border border-emerald-700 text-white focus:outline-none focus:border-amber-400"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[11px] text-slate-200 mb-1">
+                        NIP / NIK
+                      </label>
+                      <input
+                        type="text"
+                        value={editNik}
+                        onChange={(e) => setEditNik(e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg bg-[#03251c] border border-emerald-700 text-white font-mono-tabular focus:outline-none focus:border-amber-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-slate-200 mb-1">
+                        No. HP / WA
+                      </label>
+                      <input
+                        type="text"
+                        value={editHp}
+                        onChange={(e) => setEditHp(e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg bg-[#03251c] border border-emerald-700 text-white font-mono-tabular focus:outline-none focus:border-amber-400"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between gap-2 pt-1">
+                  {onDeleteCoupon ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleDeleteCouponItem(activeCoupon.id, activeCoupon.nomorKupon);
+                        setIsEditingActiveCoupon(false);
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-rose-950 hover:bg-rose-900 border border-rose-600/50 text-rose-200 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Hapus Kupon Ini</span>
+                    </button>
+                  ) : (
+                    <div />
+                  )}
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingActiveCoupon(false)}
+                      className="px-3 py-1.5 rounded-lg bg-emerald-950 text-slate-300 text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                      <span>Batal</span>
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-4 py-1.5 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Simpan Perubahan Data</span>
+                    </button>
+                  </div>
+                </div>
+              </form>
+            )}
 
             <div className="w-full overflow-hidden rounded-xl border border-amber-400/40 bg-[#021b15] p-2">
               <canvas
@@ -710,17 +1137,218 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
             <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-300">
               <span className="flex items-center gap-1.5 text-emerald-300">
                 <CheckCircle2 className="w-4 h-4 text-amber-400" />
-                Kupon dilengkapi Logo Resmi Kemenag, Logo Dinamis HAB ke-81 & Kode QR Validasi
+                Nomor Undian & Barcode QR bersifat permanen · Kupon yang menang otomatis keluar dari daftar undian
               </span>
               <span className="font-mono-tabular">
-                Total Peserta Terdaftar: {coupons.length} Kupon
+                Antrean Undian: {eligibleCount} Aktif / {coupons.length} Total
               </span>
             </div>
           </div>
         </div>
       )}
 
-      {/* MODE 2: TWIBBON STUDIO HAB KE-81 */}
+      {/* MODE 2: SCAN & VERIFIKASI KUPON PANITIA */}
+      {activeMode === 'verifikasi' && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+          {/* Left 5 Cols: Search / Camera Scanner Input */}
+          <div className="lg:col-span-5 bg-[#03251c] border border-emerald-800/80 rounded-2xl p-6 space-y-5">
+            <div className="border-b border-emerald-800/70 pb-3">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-amber-400" />
+                Meja Verifikasi Kupon Panitia
+              </h3>
+              <p className="text-xs text-slate-300 mt-1">
+                Digunakan saat peserta pemenang undian naik ke panggung untuk mencocokkan keaslian Kupon QR, NIP/NIK, dan status hadiah.
+              </p>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                runCouponLookup(verifyQuery);
+              }}
+              className="space-y-3"
+            >
+              <label className="block text-xs font-semibold text-slate-200">
+                Ketik Nomor Kupon / 4 Angka Urut / NIP / Nama Peserta:
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={verifyQuery}
+                  onChange={(e) => setVerifyQuery(e.target.value)}
+                  placeholder="Contoh: HAB81-TOUNA-0001-81 atau 0001"
+                  className="flex-1 px-3.5 py-2.5 rounded-lg bg-[#021b15] border border-emerald-700 text-xs text-white font-mono-tabular focus:outline-none focus:border-amber-400"
+                />
+                <button
+                  type="submit"
+                  className="px-4 py-2.5 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs flex items-center gap-1.5 cursor-pointer shrink-0"
+                >
+                  <Search className="w-4 h-4" />
+                  <span>Verifikasi</span>
+                </button>
+              </div>
+            </form>
+
+            {/* Camera QR Scanner Toggle */}
+            <div className="pt-3 border-t border-emerald-800/70 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-emerald-300">
+                  Pemindai Kamera QR Langsung:
+                </span>
+                {!cameraActive ? (
+                  <button
+                    type="button"
+                    onClick={handleStartCameraScanner}
+                    className="px-3 py-1.5 rounded-lg bg-emerald-800 hover:bg-emerald-700 text-amber-200 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Camera className="w-3.5 h-3.5" />
+                    <span>Aktifkan Kamera Scan QR</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={stopCameraScanner}
+                    className="px-3 py-1.5 rounded-lg bg-rose-900 hover:bg-rose-800 text-white text-xs font-bold cursor-pointer"
+                  >
+                    Matikan Kamera
+                  </button>
+                )}
+              </div>
+
+              {cameraActive && (
+                <div className="rounded-xl overflow-hidden border-2 border-amber-400 bg-black aspect-video relative">
+                  <video
+                    ref={videoScannerRef}
+                    className="w-full h-full object-cover"
+                    playsInline
+                    muted
+                  />
+                </div>
+              )}
+
+              {cameraStatus && (
+                <p className="text-[11px] text-amber-200 bg-[#021b15] border border-emerald-800 rounded-lg p-2.5">
+                  {cameraStatus}
+                </p>
+              )}
+            </div>
+
+            {/* How It Works Info Box */}
+            <div className="bg-[#021b15] border border-emerald-800/80 rounded-xl p-3.5 space-y-1.5 text-xs text-slate-300">
+              <div className="font-bold text-amber-300">
+                3 Cara Kerja Scan Verifikasi Panitia:
+              </div>
+              <ol className="list-decimal list-inside space-y-1 text-[11px] leading-relaxed">
+                <li>
+                  <strong>Scan via Kamera HP Biasa / Google Lens:</strong> Arahkan kamera HP ke QR Code pada kupon peserta, maka HP panitia otomatis membuka halaman ini dan menampilkan status sah peserta.
+                </li>
+                <li>
+                  <strong>Scan via Tombol Kamera di Atas:</strong> Panitia menekan tombol <em>Aktifkan Kamera Scan QR</em> lalu mengarahkan kupon peserta ke layar.
+                </li>
+                <li>
+                  <strong>Cek Cepat 4 Digit Nomor Kupon:</strong> Ketik langsung nomor urut (misal <code className="text-amber-300">0001</code>) atau NIP/NIK peserta pada kotak pencarian.
+                </li>
+              </ol>
+            </div>
+          </div>
+
+          {/* Right 7 Cols: Verification Result Card */}
+          <div className="lg:col-span-7 bg-[#03251c] border border-emerald-800/80 rounded-2xl p-6 space-y-5">
+            <h3 className="text-base font-bold text-white border-b border-emerald-800/70 pb-3">
+              Hasil Pemeriksaan Keaslian Kupon Peserta
+            </h3>
+
+            {!verifySearched ? (
+              <div className="py-12 text-center space-y-3 text-slate-300">
+                <QrCode className="w-12 h-12 text-amber-400/70 mx-auto" />
+                <div className="text-sm font-bold text-white">
+                  Siap Memverifikasi Kupon Peserta Jalan Sehat
+                </div>
+                <p className="text-xs text-slate-400 max-w-md mx-auto">
+                  Silakan pindai QR Code kupon peserta atau masukkan Nomor Kupon di sebelah kiri untuk melihat rincian data peserta dan status klaim hadiah.
+                </p>
+              </div>
+            ) : verifiedCoupon ? (
+              <div className="bg-[#021b15] border-2 border-emerald-500 rounded-2xl p-6 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-emerald-800 pb-4">
+                  <div className="flex items-center gap-2.5">
+                    <CheckCircle2 className="w-7 h-7 text-emerald-400 shrink-0" />
+                    <div>
+                      <span className="px-2.5 py-0.5 rounded bg-emerald-500/20 border border-emerald-400 text-emerald-300 text-[11px] font-bold">
+                        KUPON SAH & TERDAFTAR RESMI
+                      </span>
+                      <h4 className="font-mono-tabular text-xl font-extrabold text-amber-300 mt-1">
+                        {verifiedCoupon.nomorKupon}
+                      </h4>
+                    </div>
+                  </div>
+
+                  {verifiedCoupon.sudahMenang ? (
+                    <span className="px-3 py-1.5 rounded-lg bg-amber-400 text-slate-950 text-xs font-extrabold flex items-center gap-1.5">
+                      <Trophy className="w-4 h-4" />
+                      <span>SUDAH KELUAR DI UNDIAN (PEMENANG)</span>
+                    </span>
+                  ) : (
+                    <span className="px-3 py-1.5 rounded-lg bg-emerald-900/90 border border-emerald-600 text-emerald-200 text-xs font-semibold">
+                      Aktif di Daftar Undian · Belum Menang
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                  <div className="bg-[#03251c] p-3 rounded-xl border border-emerald-800/70">
+                    <span className="text-slate-400 block mb-0.5">Nama Lengkap Peserta</span>
+                    <strong className="text-sm text-white">{verifiedCoupon.namaPeserta}</strong>
+                  </div>
+                  <div className="bg-[#03251c] p-3 rounded-xl border border-emerald-800/70">
+                    <span className="text-slate-400 block mb-0.5">Utusan Satker / Umum</span>
+                    <strong className="text-sm text-amber-300">
+                      {verifiedCoupon.satkerAtauUmum}
+                    </strong>
+                  </div>
+                  <div className="bg-[#03251c] p-3 rounded-xl border border-emerald-800/70">
+                    <span className="text-slate-400 block mb-0.5">NIP / NIK Terdaftar</span>
+                    <strong className="text-sm text-white font-mono-tabular">
+                      {verifiedCoupon.nikAtauNip || '-'}
+                    </strong>
+                  </div>
+                  <div className="bg-[#03251c] p-3 rounded-xl border border-emerald-800/70">
+                    <span className="text-slate-400 block mb-0.5">Waktu Registrasi & No. HP</span>
+                    <strong className="text-sm text-white">
+                      {verifiedCoupon.waktuRegistrasi} ({verifiedCoupon.noHp || '-'})
+                    </strong>
+                  </div>
+                </div>
+
+                {verifiedCoupon.sudahMenang && (
+                  <div className="bg-amber-400/15 border border-amber-400/50 rounded-xl p-3.5 flex items-center justify-between gap-3 text-xs">
+                    <div>
+                      <span className="text-amber-200 block">Hadiah Doorprize yang Dimenangkan:</span>
+                      <strong className="text-sm text-amber-300">
+                        {verifiedCoupon.hadiahDimenangkan || 'Doorprize Utama HAB ke-81'}
+                      </strong>
+                    </div>
+                    <CheckCircle2 className="w-6 h-6 text-amber-300 shrink-0" />
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="bg-rose-950/60 border-2 border-rose-500/70 rounded-2xl p-6 text-center space-y-2">
+                <XCircle className="w-10 h-10 text-rose-400 mx-auto" />
+                <div className="text-base font-bold text-white">
+                  Kupon &ldquo;{verifyQuery}&rdquo; Tidak Ditemukan
+                </div>
+                <p className="text-xs text-rose-200 max-w-md mx-auto">
+                  Nomor kupon tersebut tidak terdaftar di database lokal perangkat ini. Pastikan perangkat panitia sudah menarik data JSON terbaru atau periksa kembali 4 digit nomor urut kupon.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* MODE 3: TWIBBON STUDIO HAB KE-81 */}
       {activeMode === 'twibbon' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           <div className="lg:col-span-5 bg-[#03251c] border border-emerald-800/80 rounded-2xl p-6 space-y-4">
@@ -808,9 +1436,9 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
           role="dialog"
           aria-modal="true"
           aria-labelledby="lucky-draw-title"
-          className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4 overflow-y-auto"
         >
-          <div className="bg-[#03251c] border-2 border-amber-400 rounded-2xl max-w-2xl w-full p-6 sm:p-8 space-y-6 shadow-2xl">
+          <div className="bg-[#03251c] border-2 border-amber-400 rounded-2xl max-w-2xl w-full p-6 sm:p-8 space-y-6 shadow-2xl my-auto">
             <div className="flex items-start justify-between gap-4 border-b border-emerald-800 pb-4">
               <div>
                 <div className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
@@ -820,6 +1448,9 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
                 <h3 id="lucky-draw-title" className="font-display text-2xl font-bold text-white mt-0.5">
                   Mesin Undian Kupon QR Digital (Lucky Draw)
                 </h3>
+                <p className="text-xs text-emerald-300 mt-0.5">
+                  Nomor kupon yang terpilih otomatis dihapus dari antrean daftar undian sehingga tidak akan terundi dua kali.
+                </p>
               </div>
               <button
                 type="button"
@@ -848,8 +1479,7 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
                 />
               </div>
               <div className="text-xs text-slate-300 font-mono-tabular pb-2">
-                Kupon Eligible: <strong className="text-amber-300">{eligibleCount}</strong> /{' '}
-                {coupons.length}
+                Sisa Daftar Undian: <strong className="text-amber-300">{eligibleCount}</strong> Kupon
               </div>
             </div>
 
@@ -868,9 +1498,14 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
                 {rollingNameDisplay}
               </div>
               {drawnWinner && (
-                <div className="pt-2 text-xs font-semibold text-emerald-300 flex items-center justify-center gap-1.5">
-                  <Trophy className="w-4 h-4 text-amber-400" />
-                  Selamat! Memenangkan: {prizeInput}
+                <div className="pt-2 space-y-1">
+                  <div className="text-xs font-semibold text-emerald-300 flex items-center justify-center gap-1.5">
+                    <Trophy className="w-4 h-4 text-amber-400" />
+                    <span>Selamat! Memenangkan: {prizeInput}</span>
+                  </div>
+                  <div className="text-[11px] text-amber-200/90">
+                    ✓ Nomor kupon {drawnWinner.nomorKupon} telah otomatis dihapus dari daftar antrean undian.
+                  </div>
                 </div>
               )}
             </div>
@@ -894,33 +1529,75 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
               </button>
             </div>
 
-            {/* Previous Winners History */}
-            {winnersList.length > 0 && (
-              <div className="border-t border-emerald-800 pt-4">
-                <div className="text-xs font-semibold text-amber-300 mb-2">
-                  Daftar Pemenang Doorprize Sah ({winnersList.length}):
+            {/* Two-Column Summary: Remaining Draw Pool vs Drawn Winners */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-emerald-800 pt-4">
+              {/* Remaining Active Draw Pool */}
+              <div className="space-y-2">
+                <div className="text-xs font-semibold text-emerald-300">
+                  Daftar Antrean Undian Tersisa ({eligibleCoupons.length}):
                 </div>
                 <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
-                  {winnersList.map((w) => (
-                    <div
-                      key={w.id}
-                      className="bg-[#021b15] border border-emerald-800/70 rounded-lg px-3 py-2 text-xs flex items-center justify-between gap-2"
-                    >
-                      <div>
-                        <strong className="text-white">{w.namaPeserta}</strong>{' '}
-                        <span className="text-slate-400">({w.satkerAtauUmum})</span>
-                      </div>
-                      <div className="text-right">
-                        <span className="font-mono-tabular text-amber-300 font-bold mr-2">
-                          {w.nomorKupon}
-                        </span>
-                        <span className="text-emerald-300">{w.hadiahDimenangkan}</span>
-                      </div>
+                  {eligibleCoupons.length === 0 ? (
+                    <div className="text-[11px] text-slate-400 bg-[#021b15] p-2.5 rounded-lg">
+                      Tidak ada kupon tersisa dalam antrean undian.
                     </div>
-                  ))}
+                  ) : (
+                    eligibleCoupons.map((c) => (
+                      <div
+                        key={c.id}
+                        className="bg-[#021b15] border border-emerald-800/60 rounded-lg px-2.5 py-1.5 text-[11px] flex items-center justify-between gap-2"
+                      >
+                        <span className="font-mono-tabular text-amber-300 font-bold">
+                          {c.nomorKupon}
+                        </span>
+                        <span className="text-slate-200 truncate">{c.namaPeserta}</span>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
-            )}
+
+              {/* Drawn Winners (Removed from Active Draw Pool) */}
+              <div className="space-y-2">
+                <div className="text-xs font-semibold text-amber-300">
+                  Sudah Diundi / Keluar dari Antrean ({winnersList.length}):
+                </div>
+                <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                  {winnersList.length === 0 ? (
+                    <div className="text-[11px] text-slate-400 bg-[#021b15] p-2.5 rounded-lg">
+                      Belum ada nomor yang ditarik mesin undian.
+                    </div>
+                  ) : (
+                    winnersList.map((w) => (
+                      <div
+                        key={w.id}
+                        className="bg-[#021b15] border border-amber-400/40 rounded-lg px-2.5 py-1.5 text-[11px] flex items-center justify-between gap-2"
+                      >
+                        <div className="min-w-0">
+                          <div className="font-mono-tabular text-amber-300 font-bold">
+                            {w.nomorKupon}
+                          </div>
+                          <div className="text-white truncate">{w.namaPeserta}</div>
+                          <div className="text-[10px] text-emerald-300 truncate">
+                            {w.hadiahDimenangkan}
+                          </div>
+                        </div>
+                        {onDeleteCoupon && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteCouponItem(w.id, w.nomorKupon)}
+                            title="Hapus permanen jika pemenang gugur/tidak hadir"
+                            className="p-1.5 rounded bg-rose-950 hover:bg-rose-900 text-rose-300 shrink-0 cursor-pointer"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}

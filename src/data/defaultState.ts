@@ -36,6 +36,13 @@ export const DEFAULT_APP_STATE: AppState = {
     ],
     allowCustomCompetitionProposal: true,
     adminPin: '812027',
+    welcomeVoice: {
+      enabled: true,
+      mode: 'tts',
+      welcomeText:
+        'Selamat datang di Portal Resmi Peringatan Hari Amal Bakti ke-81 Kementerian Agama Republik Indonesia, Kantor Kementerian Agama Kabupaten Tojo Una-Una Tahun 2027. Umat Rukun dan Sinergi, Indonesia Damai dan Maju.',
+      audioUrl: '',
+    },
   },
   satkerList: [
     'Kantor Kemenag Kab. Tojo Una-Una (Induk)',
@@ -668,4 +675,147 @@ export const DEFAULT_APP_STATE: AppState = {
       disetujui: true,
     },
   ],
+  videos: [
+    {
+      id: 'vid-1',
+      judul: 'Profil Pelayanan Publik & Zona Integritas Kantor Kemenag Kab. Tojo Una-Una',
+      satker: 'Kantor Kemenag Kab. Tojo Una-Una (Induk)',
+      kategori: 'Profil & Inovasi Satker',
+      sumberipe: 'youtube',
+      youtubeUrl: 'https://www.youtube.com/watch?v=ysz5S6PUM-U',
+      durasiLabel: '03:45',
+      deskripsi:
+        'Tayangan resmi profil pelayanan terpadu, moderasi beragama, dan inovasi layanan keagamaan di wilayah daratan Ampana serta Kepulauan Togean & Walea.',
+      waktuUpload: '15 Nov 2026',
+      disetujui: true,
+    },
+    {
+      id: 'vid-2',
+      judul: 'Semarak Persiapan Porseni & Jalan Sehat Kerukunan HAB ke-81 Tahun 2027',
+      satker: 'FKUB & Kontingen Lintas Agama Kab. Tojo Una-Una',
+      kategori: 'Dokumentasi Porseni & Baksos',
+      sumberipe: 'youtube',
+      youtubeUrl: 'https://www.youtube.com/watch?v=jNQXAC9IVRw',
+      durasiLabel: '02:15',
+      deskripsi:
+        'Dokumentasi kebersamaan seluruh Satker KUA, Madrasah, Pondok Pesantren, dan tokoh lintas agama menyambut Hari Amal Bakti ke-81 Kementerian Agama.',
+      waktuUpload: '16 Nov 2026',
+      disetujui: true,
+    },
+  ],
+  satkerBanners: [
+    {
+      id: 'bnr-seed-1',
+      satker: 'Kantor Kemenag Kab. Tojo Una-Una (Induk)',
+      kategori: 'Spanduk & Banner Ucapan',
+      judul: 'Spanduk Utama Sukseskan HAB ke-81 Kementerian Agama RI Tahun 2027',
+      imageUrl: `data:image/svg+xml;utf8,${encodeURIComponent(
+        `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 500">
+          <defs>
+            <linearGradient id="bg1" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#022c22"/>
+              <stop offset="55%" stop-color="#064e3b"/>
+              <stop offset="100%" stop-color="#021b15"/>
+            </linearGradient>
+          </defs>
+          <rect width="1200" height="500" fill="url(#bg1)"/>
+          <rect x="24" y="24" width="1152" height="452" rx="18" fill="none" stroke="#fbbf24" stroke-width="3" stroke-opacity="0.65"/>
+          <circle cx="150" cy="250" r="82" fill="#03251c" stroke="#fbbf24" stroke-width="4"/>
+          <text x="150" y="268" text-anchor="middle" fill="#fbbf24" font-family="sans-serif" font-weight="800" font-size="56">81</text>
+          <text x="275" y="155" fill="#fde68a" font-family="sans-serif" font-weight="700" font-size="24" letter-spacing="2">KANTOR KEMENTERIAN AGAMA KABUPATEN TOJO UNA-UNA</text>
+          <text x="275" y="235" fill="#ffffff" font-family="sans-serif" font-weight="800" font-size="44">DIRGAHAYU HARI AMAL BAKTI KE-81</text>
+          <text x="275" y="295" fill="#34d399" font-family="sans-serif" font-weight="700" font-size="28">Umat Rukun dan Sinergi, Indonesia Damai dan Maju</text>
+          <text x="275" y="365" fill="#cbd5e1" font-family="sans-serif" font-size="21">3 Januari 1946 — 3 Januari 2027 · Bumi Sivia Patuju, Ampana &amp; Kepulauan Togean</text>
+        </svg>`
+      )}`,
+      bannerUcapan:
+        'Keluarga Besar Kantor Kemenag Kab. Tojo Una-Una mengucapkan Selamat Hari Amal Bakti ke-81 Kementerian Agama RI Tahun 2027.',
+      keterangan: 'Spanduk resmi Sekretariat Panitia HAB ke-81 di Kompleks Perkantoran Bumi Mas Ampana.',
+      waktuUpload: '15 Nov 2026',
+      disetujui: true,
+    },
+    {
+      id: 'bnr-seed-2',
+      satker: 'MAN Tojo Una-Una',
+      kategori: 'Persiapan Lomba',
+      judul: 'Persiapan Kontingen Olahraga & Seni Madrasah Aliyah Negeri Tojo Una-Una',
+      imageUrl: `data:image/svg+xml;utf8,${encodeURIComponent(
+        `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 500">
+          <defs>
+            <linearGradient id="bg2" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#042f2e"/>
+              <stop offset="100%" stop-color="#022c22"/>
+            </linearGradient>
+          </defs>
+          <rect width="1200" height="500" fill="url(#bg2)"/>
+          <rect x="28" y="28" width="1144" height="444" rx="18" fill="none" stroke="#34d399" stroke-width="2" stroke-opacity="0.5"/>
+          <text x="600" y="160" text-anchor="middle" fill="#fbbf24" font-family="sans-serif" font-weight="700" font-size="24">PERSIAPAN LOMBA &amp; PORSENI HAB KE-81</text>
+          <text x="600" y="240" text-anchor="middle" fill="#ffffff" font-family="sans-serif" font-weight="800" font-size="42">MAN TOJO UNA-UNA SIAP SUKSESKAN PORSENI HAB KE-81</text>
+          <text x="600" y="310" text-anchor="middle" fill="#a7f3d0" font-family="sans-serif" font-weight="600" font-size="26">Cabang Bola Voli, Bulu Tangkis, Tenis Meja &amp; Paduan Suara Mars Kemenag</text>
+          <text x="600" y="380" text-anchor="middle" fill="#94a3b8" font-family="sans-serif" font-size="20">Sportivitas Tinggi · Merajut Silaturahmi Keluarga Besar Kemenag Touna</text>
+        </svg>`
+      )}`,
+      bannerUcapan:
+        'Siap menjunjung tinggi sportivitas dan merajut kebersamaan pada Porseni HAB ke-81 Tahun 2027!',
+      keterangan: 'Latihan rutin tim voli dan paduan suara guru/pegawai MAN Tojo Una-Una.',
+      waktuUpload: '16 Nov 2026',
+      disetujui: true,
+    },
+    {
+      id: 'bnr-seed-3',
+      satker: 'DWP Kantor Kemenag Kab. Tojo Una-Una',
+      kategori: 'Baksos',
+      judul: 'Aksi Bakti Sosial Paket Sembako Kasih & Santunan Pondok Pesantren',
+      imageUrl: `data:image/svg+xml;utf8,${encodeURIComponent(
+        `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 500">
+          <defs>
+            <linearGradient id="bg3" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#064e3b"/>
+              <stop offset="100%" stop-color="#021b15"/>
+            </linearGradient>
+          </defs>
+          <rect width="1200" height="500" fill="url(#bg3)"/>
+          <rect x="28" y="28" width="1144" height="444" rx="18" fill="none" stroke="#fbbf24" stroke-width="2" stroke-opacity="0.5"/>
+          <text x="600" y="160" text-anchor="middle" fill="#fde68a" font-family="sans-serif" font-weight="700" font-size="24">PEDULI UMAT &amp; BAKTI SOSIAL HAB KE-81</text>
+          <text x="600" y="240" text-anchor="middle" fill="#ffffff" font-family="sans-serif" font-weight="800" font-size="40">PENYALURAN SEMBAKO KASIH &amp; DONOR DARAH ASN</text>
+          <text x="600" y="310" text-anchor="middle" fill="#34d399" font-family="sans-serif" font-weight="600" font-size="25">Dharma Wanita Persatuan &amp; UPZ Kemenag Kabupaten Tojo Una-Una</text>
+          <text x="600" y="380" text-anchor="middle" fill="#cbd5e1" font-family="sans-serif" font-size="20">Menjangkau Masyarakat Daratan Ampana hingga Kepulauan Togean &amp; Walea</text>
+        </svg>`
+      )}`,
+      bannerUcapan:
+        'Berbagi berkah dan kepedulian nyata untuk masyarakat Kabupaten Tojo Una-Una.',
+      keterangan: 'Dokumentasi penyaluran paket sembako dan santunan yatim bersama DWP & UPZ.',
+      waktuUpload: '18 Nov 2026',
+      disetujui: true,
+    },
+    {
+      id: 'bnr-seed-4',
+      satker: 'KUA Kec. Wakai / Una-Una (Kepulauan)',
+      kategori: 'Kunjungan Kerja',
+      judul: 'Kunjungan Kerja & Pembinaan Layanan Keagamaan Wilayah Kepulauan Togean',
+      imageUrl: `data:image/svg+xml;utf8,${encodeURIComponent(
+        `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 500">
+          <defs>
+            <linearGradient id="bg4" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#022c22"/>
+              <stop offset="100%" stop-color="#0f3f35"/>
+            </linearGradient>
+          </defs>
+          <rect width="1200" height="500" fill="url(#bg4)"/>
+          <rect x="28" y="28" width="1144" height="444" rx="18" fill="none" stroke="#6ee7b7" stroke-width="2" stroke-opacity="0.5"/>
+          <text x="600" y="160" text-anchor="middle" fill="#fbbf24" font-family="sans-serif" font-weight="700" font-size="24">KUNJUNGAN KERJA &amp; MONITORING KEPULAUAN</text>
+          <text x="600" y="240" text-anchor="middle" fill="#ffffff" font-family="sans-serif" font-weight="800" font-size="40">SINERGI PELAYANAN KUA KEPULAUAN TOGEAN &amp; WALEA</text>
+          <text x="600" y="310" text-anchor="middle" fill="#a7f3d0" font-family="sans-serif" font-weight="600" font-size="25">Koordinasi Kontingen Kepulauan Menuju Semarak HAB ke-81 di Ampana</text>
+          <text x="600" y="380" text-anchor="middle" fill="#cbd5e1" font-family="sans-serif" font-size="20">KUA Una-Una · KUA Togean · KUA Walea Kepulauan · KUA Walea Besar · KUA Batudaka · KUA Talatako</text>
+        </svg>`
+      )}`,
+      bannerUcapan:
+        'Kontingen KUA Kepulauan siap menyukseskan seluruh rangkaian HAB ke-81 Kemenag Tojo Una-Una!',
+      keterangan: 'Kunjungan kerja pembinaan ASN dan koordinasi pemberangkatan kontingen kepulauan.',
+      waktuUpload: '19 Nov 2026',
+      disetujui: true,
+    },
+  ],
 };
+
+

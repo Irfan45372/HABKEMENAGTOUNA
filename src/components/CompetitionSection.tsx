@@ -15,13 +15,17 @@ import {
 import {
   Award,
   CheckCircle2,
+  Download,
+  Edit3,
   FileText,
   Filter,
+  Lock,
   Plus,
   Search,
   Sparkles,
   Trash2,
   Trophy,
+  Upload,
   UserPlus,
   Users,
 } from 'lucide-react';
@@ -34,6 +38,10 @@ interface CompetitionSectionProps {
   medalStandings: MedalStanding[];
   allowCustomProposal: boolean;
   preselectedCompetitionId?: string | null;
+  adminPin?: string;
+  isAdminUnlocked?: boolean;
+  onUnlockAdmin?: () => void;
+  onUpdateCompetition?: (id: string, partial: Partial<Competition>) => void;
   onAddRegistration: (reg: ParticipantRegistration, newSatkerName?: string) => void;
 }
 
@@ -45,6 +53,10 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
   medalStandings,
   allowCustomProposal,
   preselectedCompetitionId,
+  adminPin = '812027',
+  isAdminUnlocked = false,
+  onUnlockAdmin,
+  onUpdateCompetition,
   onAddRegistration,
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<
@@ -82,6 +94,15 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
   const [formError, setFormError] = useState<string | null>(null);
   const [formSuccess, setFormSuccess] = useState<string | null>(null);
   const [activeJuknisComp, setActiveJuknisComp] = useState<Competition | null>(null);
+  const [isEditingJuknisModal, setIsEditingJuknisModal] = useState<boolean>(false);
+  const [showJuknisPinPrompt, setShowJuknisPinPrompt] = useState<boolean>(false);
+  const [juknisPinInput, setJuknisPinInput] = useState<string>('');
+  const [juknisPinError, setJuknisPinError] = useState<string | null>(null);
+  const [editJuknisCatatan, setEditJuknisCatatan] = useState<string>('');
+  const [editJuknisUrl, setEditJuknisUrl] = useState<string>('');
+  const [editJuknisJadwal, setEditJuknisJadwal] = useState<string>('');
+  const [editJuknisPic, setEditJuknisPic] = useState<string>('');
+  const [juknisBannerMsg, setJuknisBannerMsg] = useState<string | null>(null);
 
   // Directory filters
   const [dirCompFilter, setDirCompFilter] = useState<string>('ALL');
@@ -971,15 +992,15 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
         </div>
       )}
 
-      {/* Juknis Detail Modal */}
+      {/* Juknis Detail & Direct Admin Editor Modal */}
       {activeJuknisComp && (
         <div
           role="dialog"
           aria-modal="true"
           aria-labelledby="juknis-modal-title"
-          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 overflow-y-auto"
         >
-          <div className="bg-[#03251c] border border-amber-400/50 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
+          <div className="bg-[#03251c] border border-amber-400/60 rounded-2xl max-w-xl w-full p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-start justify-between gap-3 border-b border-emerald-800 pb-3">
               <div>
                 <div className="text-xs text-amber-300 font-semibold">
@@ -989,50 +1010,295 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
                   {activeJuknisComp.nama}
                 </h3>
               </div>
-              <button
-                type="button"
-                onClick={() => setActiveJuknisComp(null)}
-                className="px-2.5 py-1 rounded bg-[#021b15] text-slate-300 hover:text-white text-xs cursor-pointer"
-              >
-                Tutup
-              </button>
+              <div className="flex items-center gap-2">
+                {onUpdateCompetition && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (isAdminUnlocked) {
+                        setEditJuknisCatatan(
+                          activeJuknisComp.catatan ||
+                            'Peserta wajib melakukan registrasi daring melalui portal HABKEMENAGTOUNA dan hadir 30 menit sebelum jadwal pertandingan.'
+                        );
+                        setEditJuknisUrl(
+                          activeJuknisComp.juknisUrl === '#juknis'
+                            ? ''
+                            : activeJuknisComp.juknisUrl || ''
+                        );
+                        setEditJuknisJadwal(activeJuknisComp.jadwalRingkas || '');
+                        setEditJuknisPic(activeJuknisComp.koordinator || '');
+                        setIsEditingJuknisModal((prev) => !prev);
+                        setShowJuknisPinPrompt(false);
+                      } else {
+                        setShowJuknisPinPrompt((prev) => !prev);
+                        setJuknisPinError(null);
+                      }
+                    }}
+                    className="px-2.5 py-1 rounded bg-amber-400/20 hover:bg-amber-400/30 border border-amber-400/50 text-amber-300 text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    <span>{isEditingJuknisModal ? 'Batal Edit' : 'Edit Juknis (Admin)'}</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveJuknisComp(null);
+                    setIsEditingJuknisModal(false);
+                    setShowJuknisPinPrompt(false);
+                  }}
+                  className="px-2.5 py-1 rounded bg-[#021b15] text-slate-300 hover:text-white text-xs cursor-pointer"
+                >
+                  Tutup
+                </button>
+              </div>
             </div>
 
-            <div className="space-y-2.5 text-xs text-slate-200 leading-relaxed">
-              <p>
-                <strong className="text-amber-300">Kategori:</strong> {activeJuknisComp.kategori}
-              </p>
-              <p>
-                <strong className="text-amber-300">Format Kepesertaan:</strong>{' '}
-                {activeJuknisComp.jenisPeserta} (Kuota Maksimal {activeJuknisComp.kuotaPemain}{' '}
-                Orang per Satker)
-              </p>
-              <p>
-                <strong className="text-amber-300">Jadwal Pelaksanaan:</strong>{' '}
-                {activeJuknisComp.jadwalRingkas}
-              </p>
-              <p>
-                <strong className="text-amber-300">Koordinator Seksi:</strong>{' '}
-                {activeJuknisComp.koordinator}
-              </p>
-              <p>
-                <strong className="text-amber-300">Ketentuan Teknis:</strong>{' '}
-                {activeJuknisComp.catatan ||
-                  'Peserta wajib melakukan registrasi daring melalui portal HABKEMENAGTOUNA dan hadir 30 menit sebelum jadwal pertandingan.'}
-              </p>
-              {activeJuknisComp.juknisUrl && activeJuknisComp.juknisUrl.startsWith('http') && (
-                <p className="pt-2">
-                  <a
-                    href={activeJuknisComp.juknisUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-emerald-300 underline"
+            {juknisBannerMsg && (
+              <div className="p-2.5 rounded-lg bg-emerald-900/90 border border-emerald-500/60 text-xs text-emerald-200 font-semibold">
+                {juknisBannerMsg}
+              </div>
+            )}
+
+            {/* Admin PIN verification inside Juknis modal if not unlocked */}
+            {showJuknisPinPrompt && !isAdminUnlocked && (
+              <div className="p-3.5 rounded-xl bg-[#021b15] border border-amber-400/50 space-y-2.5">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-amber-300">
+                  <Lock className="w-3.5 h-3.5" />
+                  <span>Verifikasi PIN Admin untuk Mengisi / Mengedit Juknis</span>
+                </div>
+                {juknisPinError && (
+                  <div className="text-[11px] text-rose-300">{juknisPinError}</div>
+                )}
+                <div className="flex items-center gap-2">
+                  <input
+                    type="password"
+                    value={juknisPinInput}
+                    onChange={(e) => setJuknisPinInput(e.target.value)}
+                    placeholder="Masukkan PIN Admin"
+                    className="px-3 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (juknisPinInput.trim() === (adminPin || '812027')) {
+                        onUnlockAdmin?.();
+                        setShowJuknisPinPrompt(false);
+                        setJuknisPinInput('');
+                        setEditJuknisCatatan(
+                          activeJuknisComp.catatan ||
+                            'Peserta wajib melakukan registrasi daring melalui portal HABKEMENAGTOUNA dan hadir 30 menit sebelum jadwal pertandingan.'
+                        );
+                        setEditJuknisUrl(
+                          activeJuknisComp.juknisUrl === '#juknis'
+                            ? ''
+                            : activeJuknisComp.juknisUrl || ''
+                        );
+                        setEditJuknisJadwal(activeJuknisComp.jadwalRingkas || '');
+                        setEditJuknisPic(activeJuknisComp.koordinator || '');
+                        setIsEditingJuknisModal(true);
+                      } else {
+                        setJuknisPinError('PIN Admin tidak sesuai.');
+                      }
+                    }}
+                    className="px-3 py-1.5 rounded bg-amber-400 text-slate-950 font-bold text-xs cursor-pointer"
                   >
-                    Unduh Dokumen PDF Juknis Lengkap
-                  </a>
-                </p>
-              )}
-            </div>
+                    Buka Editor Juknis
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {isEditingJuknisModal ? (
+              <div className="p-4 rounded-xl bg-[#021b15] border border-amber-400/50 space-y-3">
+                <div className="text-xs font-bold text-amber-300">
+                  Editor Petunjuk Teknis (Juknis) — {activeJuknisComp.nama}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block text-[11px] text-slate-300 mb-1">
+                      Jadwal Pelaksanaan:
+                    </label>
+                    <input
+                      type="text"
+                      value={editJuknisJadwal}
+                      onChange={(e) => setEditJuknisJadwal(e.target.value)}
+                      className="w-full px-2.5 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] text-slate-300 mb-1">
+                      Koordinator Seksi / PIC:
+                    </label>
+                    <input
+                      type="text"
+                      value={editJuknisPic}
+                      onChange={(e) => setEditJuknisPic(e.target.value)}
+                      className="w-full px-2.5 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] text-slate-300 mb-1">
+                    Isi Ketentuan Teknis / Aturan Juknis Lomba (Bisa beberapa baris / penomoran):
+                  </label>
+                  <textarea
+                    rows={5}
+                    value={editJuknisCatatan}
+                    onChange={(e) => setEditJuknisCatatan(e.target.value)}
+                    placeholder="Contoh:&#10;1. Setiap Satker mengirimkan maksimal 1 tim/regu.&#10;2. Sistem pertandingan menggunakan sistem gugur.&#10;3. Peserta wajib hadir 30 menit sebelum jadwal dimulai."
+                    className="w-full px-3 py-2 rounded bg-[#03251c] border border-emerald-700 text-xs text-white leading-relaxed"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-[11px] text-slate-300">
+                    Link Dokumen Juknis (Google Drive / PDF) atau Upload File PDF/Gambar Juknis (Maks 2MB):
+                  </label>
+                  <input
+                    type="text"
+                    value={
+                      editJuknisUrl.startsWith('data:')
+                        ? 'File Juknis Lokal Terunggah'
+                        : editJuknisUrl
+                    }
+                    onChange={(e) => setEditJuknisUrl(e.target.value)}
+                    placeholder="https://drive.google.com/file/d/... (Opsional)"
+                    className="w-full px-3 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
+                  />
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    <label className="px-3 py-1.5 rounded bg-emerald-800 hover:bg-emerald-700 text-emerald-100 text-[11px] font-semibold flex items-center gap-1.5 cursor-pointer">
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>Upload File PDF / Gambar Juknis</span>
+                      <input
+                        type="file"
+                        accept=".pdf,image/*"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          if (file.size > 2 * 1024 * 1024) {
+                            setJuknisBannerMsg(
+                              'Ukuran file maksimal 2 MB. Untuk PDF lebih besar, silakan upload ke Google Drive lalu tempel link-nya.'
+                            );
+                            e.target.value = '';
+                            return;
+                          }
+                          const reader = new FileReader();
+                          reader.onload = () => {
+                            setEditJuknisUrl(String(reader.result || ''));
+                            setJuknisBannerMsg(`File "${file.name}" siap disimpan.`);
+                          };
+                          reader.readAsDataURL(file);
+                          e.target.value = '';
+                        }}
+                        className="hidden"
+                      />
+                    </label>
+                    {editJuknisUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setEditJuknisUrl('')}
+                        className="px-2.5 py-1.5 rounded bg-rose-950/80 text-rose-300 text-[11px] cursor-pointer"
+                      >
+                        Hapus File/Link
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingJuknisModal(false)}
+                    className="px-3 py-1.5 rounded bg-[#03251c] text-slate-300 text-xs cursor-pointer"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const updated: Partial<Competition> = {
+                        catatan: editJuknisCatatan.trim(),
+                        juknisUrl: editJuknisUrl.trim() || '#juknis',
+                        jadwalRingkas: editJuknisJadwal.trim() || activeJuknisComp.jadwalRingkas,
+                        koordinator: editJuknisPic.trim() || activeJuknisComp.koordinator,
+                      };
+                      onUpdateCompetition?.(activeJuknisComp.id, updated);
+                      setActiveJuknisComp({ ...activeJuknisComp, ...updated });
+                      setIsEditingJuknisModal(false);
+                      setJuknisBannerMsg('Juknis berhasil diperbarui dan disimpan!');
+                      window.setTimeout(() => setJuknisBannerMsg(null), 3500);
+                    }}
+                    className="px-4 py-1.5 rounded bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs cursor-pointer"
+                  >
+                    Simpan Perubahan Juknis
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3 text-xs text-slate-200 leading-relaxed">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-3 rounded-xl bg-[#021b15] border border-emerald-800/80">
+                  <p>
+                    <strong className="text-amber-300">Kategori:</strong>{' '}
+                    {activeJuknisComp.kategori}
+                  </p>
+                  <p>
+                    <strong className="text-amber-300">Format Kepesertaan:</strong>{' '}
+                    {activeJuknisComp.jenisPeserta} (Maks {activeJuknisComp.kuotaPemain} Orang)
+                  </p>
+                  <p>
+                    <strong className="text-amber-300">Jadwal Pelaksanaan:</strong>{' '}
+                    {activeJuknisComp.jadwalRingkas}
+                  </p>
+                  <p>
+                    <strong className="text-amber-300">Koordinator Seksi:</strong>{' '}
+                    {activeJuknisComp.koordinator}
+                  </p>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-[#021b15] border border-emerald-800/90 space-y-1.5">
+                  <div className="text-amber-300 font-bold text-xs">
+                    Ketentuan & Aturan Teknis Lomba:
+                  </div>
+                  <div className="text-slate-200 whitespace-pre-line leading-relaxed">
+                    {activeJuknisComp.catatan ||
+                      'Peserta wajib melakukan registrasi daring melalui portal HABKEMENAGTOUNA dan hadir 30 menit sebelum jadwal pertandingan.'}
+                  </div>
+                </div>
+
+                {activeJuknisComp.juknisUrl &&
+                  activeJuknisComp.juknisUrl !== '#juknis' &&
+                  (activeJuknisComp.juknisUrl.startsWith('http') ||
+                    activeJuknisComp.juknisUrl.startsWith('data:')) && (
+                    <div className="pt-1 space-y-2">
+                      {activeJuknisComp.juknisUrl.startsWith('data:image/') && (
+                        <div className="rounded-xl overflow-hidden border border-emerald-700 bg-[#021b15] p-2">
+                          <img
+                            src={activeJuknisComp.juknisUrl}
+                            alt={`Infografis Juknis ${activeJuknisComp.nama}`}
+                            className="w-full max-h-72 object-contain rounded-lg"
+                          />
+                        </div>
+                      )}
+                      <a
+                        href={activeJuknisComp.juknisUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        download={
+                          activeJuknisComp.juknisUrl.startsWith('data:')
+                            ? `Juknis-${activeJuknisComp.nama.replace(/\s+/g, '-')}`
+                            : undefined
+                        }
+                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-800 hover:bg-emerald-700 border border-amber-400/50 text-amber-200 font-bold text-xs transition-colors"
+                      >
+                        <Download className="w-4 h-4 text-amber-300" />
+                        <span>Unduh / Buka Dokumen Juknis Lengkap (PDF / Drive)</span>
+                      </a>
+                    </div>
+                  )}
+              </div>
+            )}
 
             <div className="pt-3 border-t border-emerald-800 flex justify-end gap-2">
               <button
@@ -1041,6 +1307,7 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
                   setIsCustomProposal(false);
                   setSelectedCompId(activeJuknisComp.id);
                   setActiveJuknisComp(null);
+                  setIsEditingJuknisModal(false);
                 }}
                 className="px-4 py-2 rounded-lg bg-amber-400 text-slate-950 font-semibold text-xs cursor-pointer"
               >

@@ -1,0 +1,126 @@
+{
+  "entities": {
+    "PortalConfig": {
+      "title": "PortalConfig",
+      "description": "Master configuration, branding, venues, satkerList, competitions, matches, medalStandings, schedules, and baksosMetrics for Portal HAB ke-81 Kemenag Tojo Una-Una.",
+      "type": "object",
+      "properties": {
+        "branding": { "type": "object", "description": "Branding and audio greeting settings" },
+        "venues": { "type": "array", "description": "List of 3D venue locations" },
+        "satkerList": { "type": "array", "description": "List of participating Satker units" },
+        "competitions": { "type": "array", "description": "List of competitions and Juknis" },
+        "matches": { "type": "array", "description": "List of live match scores" },
+        "medalStandings": { "type": "array", "description": "Medal standings per Satker" },
+        "schedules": { "type": "array", "description": "Event schedule items" },
+        "baksosMetrics": { "type": "object", "description": "Bakti sosial impact metrics" },
+        "updatedAt": { "type": "string", "description": "ISO timestamp of last update" }
+      },
+      "required": ["branding", "competitions", "schedules"]
+    },
+    "ParticipantRegistration": {
+      "title": "ParticipantRegistration",
+      "description": "Competition registration submitted by Satker or public participants.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "competitionId": { "type": "string" },
+        "namaLomba": { "type": "string" },
+        "satker": { "type": "string" },
+        "formatKepesertaan": { "type": "string" },
+        "namaPesertaAtauTim": { "type": "string" },
+        "daftarAnggota": { "type": "string" },
+        "kontakWa": { "type": "string" },
+        "waktuDaftar": { "type": "string" }
+      },
+      "required": ["id", "competitionId", "namaLomba", "satker", "namaPesertaAtauTim", "waktuDaftar"]
+    },
+    "JalanSehatCoupon": {
+      "title": "JalanSehatCoupon",
+      "description": "Digital coupon and QR code for Jalan Sehat Kerukunan.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "nomorKupon": { "type": "string" },
+        "namaPeserta": { "type": "string" },
+        "satkerAtauUmum": { "type": "string" },
+        "nikAtauNip": { "type": "string" },
+        "noHp": { "type": "string" },
+        "waktuCetak": { "type": "string" },
+        "sudahMenang": { "type": "boolean" },
+        "hadiahDimenangkan": { "type": "string" }
+      },
+      "required": ["id", "nomorKupon", "namaPeserta", "satkerAtauUmum", "waktuCetak"]
+    },
+    "HarmonyMessage": {
+      "title": "HarmonyMessage",
+      "description": "Greeting and aspiration posted to the Wall of Harmony.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "namaPengirim": { "type": "string" },
+        "satker": { "type": "string" },
+        "isiPesan": { "type": "string" },
+        "waktu": { "type": "string" }
+      },
+      "required": ["id", "namaPengirim", "satker", "isiPesan", "waktu"]
+    },
+    "VideoItem": {
+      "title": "VideoItem",
+      "description": "YouTube documentation video submitted by Satker or Admin.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "judul": { "type": "string" },
+        "kategori": { "type": "string" },
+        "satker": { "type": "string" },
+        "youtubeUrl": { "type": "string" },
+        "embedUrl": { "type": "string" },
+        "deskripsi": { "type": "string" },
+        "tanggal": { "type": "string" }
+      },
+      "required": ["id", "judul", "satker", "youtubeUrl", "embedUrl"]
+    },
+    "SatkerBannerItem": {
+      "title": "SatkerBannerItem",
+      "description": "Spanduk ucapan or activity photo uploaded by Satker or Admin.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "judul": { "type": "string" },
+        "satker": { "type": "string" },
+        "kategori": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "bannerUcapan": { "type": "string" },
+        "deskripsi": { "type": "string" },
+        "tanggal": { "type": "string" }
+      },
+      "required": ["id", "judul", "satker", "kategori", "imageUrl"]
+    }
+  },
+  "firestore": {
+    "/portalConfig/{docId}": {
+      "schema": { "$ref": "#/entities/PortalConfig" },
+      "description": "Stores master configuration document 'main' for the HAB ke-81 portal."
+    },
+    "/registrations/{regId}": {
+      "schema": { "$ref": "#/entities/ParticipantRegistration" },
+      "description": "Stores competition registrations from Satker and public participants."
+    },
+    "/coupons/{couponId}": {
+      "schema": { "$ref": "#/entities/JalanSehatCoupon" },
+      "description": "Stores Jalan Sehat digital coupons and prize winner status."
+    },
+    "/messages/{msgId}": {
+      "schema": { "$ref": "#/entities/HarmonyMessage" },
+      "description": "Stores Wall of Harmony greetings and feedback messages."
+    },
+    "/videos/{videoId}": {
+      "schema": { "$ref": "#/entities/VideoItem" },
+      "description": "Stores YouTube video documentation items."
+    },
+    "/satkerBanners/{bannerId}": {
+      "schema": { "$ref": "#/entities/SatkerBannerItem" },
+      "description": "Stores Satker banners, greeting spanduk, and activity photos."
+    }
+  }
+}

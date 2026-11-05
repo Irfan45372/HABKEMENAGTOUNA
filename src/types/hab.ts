@@ -134,6 +134,7 @@ export interface HarmonyMessage {
   jabatanAtauSatker: string;
   kategori: 'Ucapan Selamat HAB ke-81' | 'Aspirasi & Saran Panitia' | 'Doa Kerukunan Umat';
   pesan: string;
+  bannerImageUrl?: string; // Opsional: Gambar Banner / Spanduk Ucapan Satker
   waktu: string;
   disetujui: boolean;
 }
@@ -144,6 +145,13 @@ export interface NavLabelsConfig {
   lomba: string;
   jadwal: string;
   kupon: string;
+}
+
+export interface WelcomeVoiceConfig {
+  enabled: boolean;
+  mode: 'tts' | 'audio_url';
+  welcomeText: string;
+  audioUrl: string;
 }
 
 export interface BrandingConfig {
@@ -165,6 +173,48 @@ export interface BrandingConfig {
   runningTextItems: string[];
   allowCustomCompetitionProposal: boolean;
   adminPin: string;
+  welcomeVoice?: WelcomeVoiceConfig;
+}
+
+export interface VideoItem {
+  id: string;
+  judul: string;
+  satker: string;
+  kategori:
+    | 'Live Streaming & Upacara'
+    | 'Lomba Video Kreatif & Moderasi'
+    | 'Profil & Inovasi Satker'
+    | 'Dokumentasi Porseni & Baksos'
+    | string;
+  sumberipe: 'youtube' | 'direct_video';
+  youtubeUrl?: string;
+  videoFileUrl?: string; // URL MP4 atau DataURL video pendek
+  durasiLabel?: string;
+  deskripsi?: string;
+  bannerUcapanTeks?: string; // Opsional: Teks Banner Ucapan Satker
+  bannerUcapanUrl?: string; // Opsional: Gambar Banner Ucapan Satker
+  waktuUpload: string;
+  disetujui: boolean;
+}
+
+export type SatkerBannerCategory =
+  | 'Spanduk & Banner Ucapan'
+  | 'Persiapan Lomba'
+  | 'Baksos'
+  | 'Kunjungan Kerja'
+  | 'Upacara & Seremonial'
+  | string;
+
+export interface SatkerBannerItem {
+  id: string;
+  satker: string;
+  kategori: SatkerBannerCategory;
+  judul: string;
+  imageUrl: string; // DataURL terkompresi atau Link URL Gambar
+  bannerUcapan?: string; // Opsional: Slogan / Teks Banner Ucapan Satker
+  keterangan?: string; // Opsional: Deskripsi foto persiapan/kegiatan
+  waktuUpload: string;
+  disetujui: boolean;
 }
 
 export interface AppState {
@@ -179,4 +229,7 @@ export interface AppState {
   baksosMetrics: BaksosMetric[];
   coupons: JalanSehatCoupon[];
   messages: HarmonyMessage[];
+  videos?: VideoItem[];
+  satkerBanners?: SatkerBannerItem[];
 }
+

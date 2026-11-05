@@ -8,14 +8,24 @@ import {
   NavLabelsConfig,
   ParticipantFormat,
   RegistrationStatus,
+  SatkerBannerCategory,
+  SatkerBannerItem,
   ScheduleEvent,
   ScheduleStatus,
   VenueArchetype,
   VenueLocation,
+  VideoItem,
 } from '../types/hab';
-import { validateImportedState } from '../utils/habLogic';
+import { DEFAULT_APP_STATE } from '../data/defaultState';
+import {
+  compressBannerImageFile,
+  extractYoutubeEmbedUrl,
+  normalizeBannerImageUrl,
+  validateImportedState,
+} from '../utils/habLogic';
 import {
   Check,
+  Cloud,
   Download,
   Edit3,
   Lock,
@@ -26,13 +36,23 @@ import {
   Trash2,
   Unlock,
   Upload,
+  Video,
   X,
 } from 'lucide-react';
+import {
+  ADMIN_EMAIL,
+  signInWithGoogleAdmin,
+  signOutFirebase,
+  syncFullStateToCloud,
+  User,
+} from '../firebase';
 
 interface AdminControlModalProps {
   isOpen: boolean;
   initialTab?: number;
   appState: AppState;
+  firebaseConnected?: boolean;
+  currentUser?: User | null;
   onClose: () => void;
   onUpdateState: (updater: (prev: AppState) => AppState) => void;
   onResetDefault: () => void;
@@ -43,6 +63,8 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
   isOpen,
   initialTab = 0,
   appState,
+  firebaseConnected = false,
+  currentUser = null,
   onClose,
   onUpdateState,
   onResetDefault,
@@ -53,10 +75,17 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
   const [pinError, setPinError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<number>(initialTab);
   const [statusBanner, setStatusBanner] = useState<string | null>(null);
+  const [isSyncingCloud, setIsSyncingCloud] = useState<boolean>(false);
 
   useEffect(() => {
     setActiveTab(initialTab);
   }, [initialTab, isOpen]);
+
+  useEffect(() => {
+    if (currentUser?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
+      setIsUnlocked(true);
+    }
+  }, [currentUser]);
 
   // Tab 1: New Competition State
   const [newCompNama, setNewCompNama] = useState('');
@@ -68,7 +97,9 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
     appState.venues[0]?.id || 'venue-kantor-kemenag'
   );
   const [newCompPic, setNewCompPic] = useState('Panitia Porseni HAB-81');
-  const [newCompJuknis, setNewCompJuknis] = useState('#juknis');
+  const [newCompJuknis, setNewCompJuknis] = useState('');
+  const [newCompCatatan, setNewCompCatatan] = useState('');
+  const [editingCompId, setEditingCompId] = useState<string | null>(null);
 
   // Tab 1: New Match Score State
   const [newMatchCompName, setNewMatchCompName] = useState(
@@ -79,6 +110,9 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
   const [newMatchB, setNewMatchB] = useState('');
   const [newMatchSkorA, setNewMatchSkorA] = useState('0');
   const [newMatchSkorB, setNewMatchSkorB] = useState('0');
+
+  // Tab 1: New Medal Standing Satker State
+  const [newMedalSatker, setNewMedalSatker] = useState('');
 
   // Tab 2: New Schedule Event State
   const [newSchJudul, setNewSchJudul] = useState('');
@@ -91,6 +125,7 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
   const [newSchPic, setNewSchPic] = useState('Seksi Acara');
   const [newSchStatus, setNewSchStatus] = useState<ScheduleStatus>('Terjadwal');
   const [newSchCatatan, setNewSchCatatan] = useState('');
+  const [editingSchId, setEditingSchId] = useState<string | null>(null);
 
   // Tab 2: New Venue State
   const [newVenueNama, setNewVenueNama] = useState('');
@@ -109,8 +144,34 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
   const [newBaksosCapaian, setNewBaksosCapaian] = useState<number>(50);
   const [newBaksosSatuan, setNewBaksosSatuan] = useState('Paket');
 
-  // Tab 3: New Satker State
+  // Tab 3: New Satker & Inline Edit State
   const [newSatkerInput, setNewSatkerInput] = useState('');
+  const [editingSatkerIdx, setEditingSatkerIdx] = useState<number | null>(null);
+  const [editingSatkerValue, setEditingSatkerValue] = useState<string>('');
+  const [editingRegId, setEditingRegId] = useState<string | null>(null);
+
+  // Tab 4: Video & YouTube State
+  const [newVidJudul, setNewVidJudul] = useState('');
+  const [newVidKat, setNewVidKat] = useState<string>('Dokumentasi Porseni & Baksos');
+  const [newVidSatker, setNewVidSatker] = useState(
+    appState.satkerList[0] || 'Kantor Kemenag Kab. Tojo Una-Una (Induk)'
+  );
+  const [newVidUrl, setNewVidUrl] = useState('');
+  const [newVidDesc, setNewVidDesc] = useState('');
+  const [editingVidId, setEditingVidId] = useState<string | null>(null);
+  const [editingCouponId, setEditingCouponId] = useState<string | null>(null);
+  const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
+
+  // Tab 4: Satker Banner & Activity Photo State
+  const [newBannerSatker, setNewBannerSatker] = useState(
+    appState.satkerList[0] || 'Kantor Kemenag Kab. Tojo Una-Una (Induk)'
+  );
+  const [newBannerKat, setNewBannerKat] = useState<SatkerBannerCategory>('Spanduk & Banner Ucapan');
+  const [newBannerJudul, setNewBannerJudul] = useState('');
+  const [newBannerImageUrl, setNewBannerImageUrl] = useState('');
+  const [newBannerUcapan, setNewBannerUcapan] = useState('');
+  const [newBannerKet, setNewBannerKet] = useState('');
+  const [editingBannerId, setEditingBannerId] = useState<string | null>(null);
 
   // Tab 5: New Running Text State
   const [newTickerInput, setNewTickerInput] = useState('');
@@ -129,7 +190,7 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
       setIsUnlocked(true);
       setPinError(null);
     } else {
-      setPinError('Kode PIN Admin tidak sesuai (Default PIN Panitia: 812027).');
+      setPinError('Kode PIN Otorisasi tidak sesuai. Akses khusus Panitia Resmi HAB ke-81.');
     }
   };
 
@@ -148,13 +209,53 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
       jadwalRingkas: newCompJadwal.trim() || 'Desember 2026',
       lokasiId: newCompLokasiId,
       koordinator: newCompPic.trim() || 'Panitia HAB-81',
+      catatan:
+        newCompCatatan.trim() ||
+        'Peserta wajib melakukan registrasi daring melalui portal HABKEMENAGTOUNA dan hadir 30 menit sebelum jadwal pertandingan.',
     };
     onUpdateState((prev) => ({
       ...prev,
       competitions: [item, ...prev.competitions],
     }));
     setNewCompNama('');
-    notify(`Cabang lomba "${item.nama}" berhasil ditambahkan.`);
+    setNewCompJuknis('');
+    setNewCompCatatan('');
+    notify(`Cabang lomba "${item.nama}" beserta Juknis berhasil ditambahkan.`);
+  };
+
+  const handleUpdateCompetitionField = (id: string, partial: Partial<Competition>) => {
+    onUpdateState((prev) => ({
+      ...prev,
+      competitions: prev.competitions.map((c) => (c.id === id ? { ...c, ...partial } : c)),
+    }));
+  };
+
+  const handleUploadJuknisFile = (
+    e: React.ChangeEvent<HTMLInputElement>,
+    targetCompId?: string
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      notify(
+        'Ukuran file Juknis maksimal 2 MB untuk unggah langsung. Untuk PDF ukuran besar, silakan unggah ke Google Drive lalu tempel link-nya di kolom Link Juknis.'
+      );
+      e.target.value = '';
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = String(reader.result || '');
+      if (targetCompId) {
+        handleUpdateCompetitionField(targetCompId, { juknisUrl: dataUrl });
+        notify(`File Juknis (${file.name}) berhasil diunggah ke cabang lomba.`);
+      } else {
+        setNewCompJuknis(dataUrl);
+        notify(`File Juknis (${file.name}) siap disimpan bersama cabang lomba baru.`);
+      }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
   const handleToggleCompStatus = (id: string) => {
@@ -206,6 +307,21 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
     notify('Data skor pertandingan ditambahkan.');
   };
 
+  const handleUpdateMatch = (id: string, partial: Partial<MatchScore>) => {
+    onUpdateState((prev) => ({
+      ...prev,
+      matches: prev.matches.map((m) => (m.id === id ? { ...m, ...partial } : m)),
+    }));
+  };
+
+  const handleDeleteMatch = (id: string) => {
+    onUpdateState((prev) => ({
+      ...prev,
+      matches: prev.matches.filter((m) => m.id !== id),
+    }));
+    notify('Data pertandingan dihapus.');
+  };
+
   const handleUpdateMedal = (
     id: string,
     field: 'emas' | 'perak' | 'perunggu',
@@ -217,6 +333,32 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
         m.id === id ? { ...m, [field]: Math.max(0, m[field] + delta) } : m
       ),
     }));
+  };
+
+  const handleAddMedalRow = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newMedalSatker.trim()) return;
+    const item: MedalStanding = {
+      id: `medal-${Date.now()}`,
+      satker: newMedalSatker.trim(),
+      emas: 0,
+      perak: 0,
+      perunggu: 0,
+    };
+    onUpdateState((prev) => ({
+      ...prev,
+      medalStandings: [...prev.medalStandings, item],
+    }));
+    setNewMedalSatker('');
+    notify(`Kontingen "${item.satker}" ditambahkan ke klasemen medali.`);
+  };
+
+  const handleDeleteMedalRow = (id: string) => {
+    onUpdateState((prev) => ({
+      ...prev,
+      medalStandings: prev.medalStandings.filter((m) => m.id !== id),
+    }));
+    notify('Baris klasemen medali dihapus.');
   };
 
   const handleAddSchedule = (e: React.FormEvent) => {
@@ -242,6 +384,13 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
     setNewSchJudul('');
     setNewSchCatatan('');
     notify(`Agenda "${ev.judul}" berhasil ditambahkan.`);
+  };
+
+  const handleUpdateSchedule = (id: string, partial: Partial<ScheduleEvent>) => {
+    onUpdateState((prev) => ({
+      ...prev,
+      schedules: prev.schedules.map((s) => (s.id === id ? { ...s, ...partial } : s)),
+    }));
   };
 
   const handleAddVenue = (e: React.FormEvent) => {
@@ -274,6 +423,33 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
     notify(`Pin Lokasi 3D "${v.nama}" (GPS: ${cleanGps}) berhasil ditambahkan ke Peta Interaktif.`);
   };
 
+  const handleUpdateVenue = (id: string, partial: Partial<VenueLocation>) => {
+    onUpdateState((prev) => ({
+      ...prev,
+      venues: prev.venues.map((v) => {
+        if (v.id !== id) return v;
+        const next = { ...v, ...partial };
+        if (partial.koordinatGps !== undefined) {
+          const parts = partial.koordinatGps.split(',').map((p) => Number(p.trim()));
+          if (parts.length === 2 && !Number.isNaN(parts[0]) && !Number.isNaN(parts[1])) {
+            next.latitude = parts[0];
+            next.longitude = parts[1];
+            next.googleMapsUrl = `https://www.google.com/maps?q=${parts[0]},${parts[1]}`;
+          }
+        }
+        return next;
+      }),
+    }));
+  };
+
+  const handleDeleteVenue = (id: string) => {
+    onUpdateState((prev) => ({
+      ...prev,
+      venues: prev.venues.filter((v) => v.id !== id),
+    }));
+    notify('Pin lokasi dihapus dari peta.');
+  };
+
   const handleAddBaksos = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newBaksosNama.trim()) return;
@@ -294,6 +470,21 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
     notify(`Indikator Bakti Sosial "${b.namaProgram}" berhasil ditambahkan.`);
   };
 
+  const handleUpdateBaksos = (id: string, partial: Partial<BaksosMetric>) => {
+    onUpdateState((prev) => ({
+      ...prev,
+      baksosMetrics: prev.baksosMetrics.map((b) => (b.id === id ? { ...b, ...partial } : b)),
+    }));
+  };
+
+  const handleDeleteBaksos = (id: string) => {
+    onUpdateState((prev) => ({
+      ...prev,
+      baksosMetrics: prev.baksosMetrics.filter((b) => b.id !== id),
+    }));
+    notify('Indikator Bakti Sosial dihapus.');
+  };
+
   const handleAddSatker = (e: React.FormEvent) => {
     e.preventDefault();
     const clean = newSatkerInput.trim();
@@ -308,6 +499,134 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
     }));
     setNewSatkerInput('');
     notify(`Satker "${clean}" ditambahkan ke daftar kontingen.`);
+  };
+
+  const handleSaveRenameSatker = (idx: number) => {
+    const clean = editingSatkerValue.trim();
+    if (!clean) return;
+    onUpdateState((prev) => ({
+      ...prev,
+      satkerList: prev.satkerList.map((item, i) => (i === idx ? clean : item)),
+    }));
+    setEditingSatkerIdx(null);
+    notify(`Nama Satker diperbarui menjadi "${clean}".`);
+  };
+
+  const handleAddVideoAdmin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newVidJudul.trim() || !newVidUrl.trim()) return;
+    const cleanUrl = newVidUrl.trim();
+    const isYt = Boolean(extractYoutubeEmbedUrl(cleanUrl));
+    const item: VideoItem = {
+      id: `vid-${Date.now()}`,
+      judul: newVidJudul.trim(),
+      kategori: newVidKat,
+      satker: newVidSatker,
+      sumberipe: isYt ? 'youtube' : 'direct_video',
+      youtubeUrl: isYt ? cleanUrl : undefined,
+      videoFileUrl: isYt ? undefined : cleanUrl,
+      durasiLabel: isYt ? 'YouTube HD' : 'Video MP4',
+      deskripsi: newVidDesc.trim() || 'Dokumentasi kegiatan HAB ke-81 Kemenag Tojo Una-Una.',
+      waktuUpload: new Date().toLocaleDateString('id-ID', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+      }),
+      disetujui: true,
+    };
+    onUpdateState((prev) => ({
+      ...prev,
+      videos: [item, ...(prev.videos || DEFAULT_APP_STATE.videos || [])],
+    }));
+    setNewVidJudul('');
+    setNewVidUrl('');
+    setNewVidDesc('');
+    notify(`Video "${item.judul}" berhasil ditambahkan ke Galeri.`);
+  };
+
+  const handleUpdateVideo = (id: string, partial: Partial<VideoItem>) => {
+    onUpdateState((prev) => {
+      const currentVideos = prev.videos || DEFAULT_APP_STATE.videos || [];
+      return {
+        ...prev,
+        videos: currentVideos.map((v) => {
+          if (v.id !== id) return v;
+          const next = { ...v, ...partial };
+          if (partial.youtubeUrl !== undefined) {
+            const isYt = Boolean(extractYoutubeEmbedUrl(partial.youtubeUrl));
+            next.sumberipe = isYt ? 'youtube' : 'direct_video';
+            if (!isYt) {
+              next.videoFileUrl = partial.youtubeUrl;
+            }
+          }
+          return next;
+        }),
+      };
+    });
+  };
+
+  const handleDeleteVideo = (id: string) => {
+    onUpdateState((prev) => {
+      const currentVideos = prev.videos || DEFAULT_APP_STATE.videos || [];
+      return {
+        ...prev,
+        videos: currentVideos.filter((v) => v.id !== id),
+      };
+    });
+    notify('Video berhasil dihapus dari galeri.');
+  };
+
+  const handleAddSatkerBannerAdmin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newBannerJudul.trim() || !newBannerImageUrl.trim()) {
+      notify('Mohon isi Judul Spanduk/Foto dan unggah atau masukkan Link Gambar terlebih dahulu.');
+      return;
+    }
+    const item: SatkerBannerItem = {
+      id: `bnr-${Date.now()}`,
+      satker: newBannerSatker,
+      kategori: newBannerKat,
+      judul: newBannerJudul.trim(),
+      imageUrl: normalizeBannerImageUrl(newBannerImageUrl),
+      bannerUcapan: newBannerUcapan.trim() || undefined,
+      keterangan: newBannerKet.trim() || undefined,
+      waktuUpload: new Date().toLocaleDateString('id-ID', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+      }),
+      disetujui: true,
+    };
+    onUpdateState((prev) => ({
+      ...prev,
+      satkerBanners: [item, ...(prev.satkerBanners || DEFAULT_APP_STATE.satkerBanners || [])],
+    }));
+    setNewBannerJudul('');
+    setNewBannerImageUrl('');
+    setNewBannerUcapan('');
+    setNewBannerKet('');
+    notify(`Spanduk / Foto untuk "${item.satker}" berhasil ditambahkan ke portal.`);
+  };
+
+  const handleUpdateSatkerBanner = (id: string, partial: Partial<SatkerBannerItem>) => {
+    onUpdateState((prev) => {
+      const current = prev.satkerBanners || DEFAULT_APP_STATE.satkerBanners || [];
+      return {
+        ...prev,
+        satkerBanners: current.map((b) => (b.id === id ? { ...b, ...partial } : b)),
+      };
+    });
+  };
+
+  const handleDeleteSatkerBanner = (id: string) => {
+    onUpdateState((prev) => {
+      const current = prev.satkerBanners || DEFAULT_APP_STATE.satkerBanners || [];
+      return {
+        ...prev,
+        satkerBanners: current.filter((b) => b.id !== id),
+      };
+    });
+    notify('Spanduk / Foto Satker berhasil dihapus.');
   };
 
   const handleHabLogoFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -399,6 +718,9 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
     reader.readAsText(file);
   };
 
+  const videosList = appState.videos || DEFAULT_APP_STATE.videos || [];
+  const bannersList = appState.satkerBanners || DEFAULT_APP_STATE.satkerBanners || [];
+
   return (
     <div
       role="dialog"
@@ -416,7 +738,7 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                 Quick Admin Control Panel — CRUD Engine HAB ke-81 Kemenag Tojo Una-Una
               </h2>
               <p className="text-xs text-emerald-300">
-                Seluruh perubahan tersimpan otomatis di browser (localStorage) & dapat diekspor ke JSON GitHub
+                Seluruh item dapat diubah (Edit) & dihapus (Hapus) kapan saja · Tersimpan otomatis & siap diekspor ke GitHub
               </p>
             </div>
           </div>
@@ -461,7 +783,9 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
               <h3 className="text-xl font-bold text-white">
                 Otorisasi Panitia HAB ke-81 Kemenag Touna
               </h3>
-              
+              <p className="text-xs text-slate-300">
+                Masukkan Kode PIN Rahasia Panitia untuk mengelola Cabang Lomba, Jadwal Acara, Pin Peta 3D, Satker, Galeri Video YouTube, serta Branding Resmi HAB ke-81.
+              </p>
             </div>
 
             {pinError && (
@@ -477,6 +801,7 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                 value={pinInput}
                 onChange={(e) => setPinInput(e.target.value)}
                 placeholder="Masukkan PIN Rahasia"
+                autoComplete="off"
                 className="px-4 py-2.5 rounded-lg bg-[#021b15] border border-emerald-700 text-sm text-white font-mono-tabular text-center focus:outline-none focus:border-amber-400"
               />
               <button
@@ -486,8 +811,31 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                 <Unlock className="w-4 h-4" />
                 <span>Buka Panel</span>
               </button>
-              
             </form>
+
+            <div className="pt-2 border-t border-emerald-800/70 w-full max-w-sm space-y-2">
+              <p className="text-[11px] text-slate-400">
+                Atau login langsung menggunakan Akun Google Firebase Admin Anda:
+              </p>
+              <button
+                type="button"
+                onClick={async () => {
+                  setPinError(null);
+                  const user = await signInWithGoogleAdmin();
+                  if (user?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
+                    setIsUnlocked(true);
+                  } else if (user) {
+                    setPinError(
+                      `Akun ${user.email} bukan email Admin utama (${ADMIN_EMAIL}). Silakan gunakan PIN.`
+                    );
+                  }
+                }}
+                className="w-full py-2.5 px-4 rounded-lg bg-emerald-800 hover:bg-emerald-700 border border-amber-400/50 text-amber-300 font-bold text-xs flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Cloud className="w-4 h-4" />
+                <span>Login Google Admin ({ADMIN_EMAIL})</span>
+              </button>
+            </div>
           </div>
         ) : (
           <>
@@ -498,10 +846,10 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
               className="px-6 py-2.5 bg-[#02221a] border-b border-emerald-800 flex flex-wrap items-center gap-2 shrink-0"
             >
               {[
-                '1. Cabang Lomba & Skor (CRUD)',
-                '2. Jadwal, Peta 3D & Baksos (CRUD)',
-                '3. Master Satker & Pendaftar (CRUD)',
-                '4. Kupon QR & Moderasi Ucapan',
+                '1. Cabang Lomba, Skor & Medali (Edit/Hapus)',
+                '2. Jadwal, Peta 3D & Baksos (Edit/Hapus)',
+                '3. Master Satker & Pendaftar (Edit/Hapus)',
+                '4. Video, Spanduk Satker, Kupon & Ucapan',
                 '5. Branding Logo HAB-81 & JSON GitHub',
               ].map((label, idx) => (
                 <button
@@ -524,7 +872,7 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
             {/* Scrollable Tab Body */}
             <div className="p-6 overflow-y-auto space-y-8 flex-1">
               {/* ===================================================================
-                  TAB 1: MASTER CABANG LOMBA, SKOR & KLASEMEN MEDALI
+                  TAB 1: MASTER CABANG LOMBA, SKOR & KLASEMEN MEDALI (FULL EDIT/DELETE)
                  =================================================================== */}
               {activeTab === 0 && (
                 <div className="space-y-8">
@@ -626,149 +974,512 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                         <span>Tambah Cabang Lomba</span>
                       </button>
                     </div>
-                  </form>
 
-                  {/* Existing Competitions List */}
-                  <div className="space-y-2.5">
-                    <h4 className="text-xs font-bold text-slate-200">
-                      Daftar Master Cabang Lomba Aktif ({appState.competitions.length})
-                    </h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      {appState.competitions.map((comp) => (
-                        <div
-                          key={comp.id}
-                          className="bg-[#021b15] border border-emerald-800/80 rounded-xl p-3.5 flex items-center justify-between gap-3"
-                        >
-                          <div className="min-w-0">
-                            <div className="text-xs font-bold text-white truncate">
-                              {comp.nama}
-                            </div>
-                            <div className="text-[11px] text-slate-400">
-                              {comp.kategori} · {comp.jenisPeserta} (Kuota {comp.kuotaPemain}) ·{' '}
-                              {comp.jadwalRingkas}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <button
-                              type="button"
-                              onClick={() => handleToggleCompStatus(comp.id)}
-                              className={`px-2.5 py-1 rounded text-[11px] font-bold cursor-pointer ${
-                                comp.statusPendaftaran === 'Buka'
-                                  ? 'bg-emerald-800 text-emerald-200'
-                                  : 'bg-rose-900 text-rose-200'
-                              }`}
-                            >
-                              {comp.statusPendaftaran}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteCompetition(comp.id)}
-                              aria-label={`Hapus ${comp.nama}`}
-                              className="p-1.5 rounded bg-rose-950/80 hover:bg-rose-900 text-rose-300 cursor-pointer"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                    {/* Juknis Input Section for New Competition */}
+                    <div className="pt-3 border-t border-emerald-800/70 space-y-3">
+                      <div className="text-xs font-bold text-emerald-300">
+                        Petunjuk Teknis (Juknis) Lomba / Olahraga Baru (Opsional — dapat diedit kapan saja):
+                      </div>
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                        <div className="space-y-2">
+                          <label className="block text-[11px] text-slate-300">
+                            1. Isi Aturan / Ketentuan Teknis Juknis (Tampil langsung saat peserta klik &ldquo;Lihat Juknis&rdquo;):
+                          </label>
+                          <textarea
+                            rows={3}
+                            value={newCompCatatan}
+                            onChange={(e) => setNewCompCatatan(e.target.value)}
+                            placeholder="Ketik poin-poin aturan lomba di sini... (Contoh: 1. Sistem gugur, 2. Kostum sopan/olahraga, 3. Hadir 30 menit sebelum jadwal)"
+                            className="w-full px-3 py-2 rounded-lg bg-[#03251c] border border-emerald-700 text-xs text-white"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="block text-[11px] text-slate-300">
+                            2. Link Dokumen Juknis (Google Drive / PDF) atau Upload File PDF/Gambar Juknis (Maks 2MB):
+                          </label>
+                          <input
+                            type="text"
+                            value={newCompJuknis.startsWith('data:') ? 'File Juknis Lokal Terunggah' : newCompJuknis}
+                            onChange={(e) => setNewCompJuknis(e.target.value)}
+                            placeholder="Tempel link Google Drive / PDF Juknis (https://drive.google.com/...)"
+                            className="w-full px-3 py-2 rounded-lg bg-[#03251c] border border-emerald-700 text-xs text-white"
+                          />
+                          <div className="flex flex-wrap items-center gap-2">
+                            <label className="px-3 py-1.5 rounded-lg bg-emerald-800 hover:bg-emerald-700 text-emerald-100 text-[11px] font-semibold flex items-center gap-1.5 cursor-pointer">
+                              <Upload className="w-3.5 h-3.5" />
+                              <span>Upload File PDF / Gambar Juknis</span>
+                              <input
+                                type="file"
+                                accept=".pdf,image/*"
+                                onChange={(e) => handleUploadJuknisFile(e)}
+                                className="hidden"
+                              />
+                            </label>
+                            {newCompJuknis && newCompJuknis !== '#juknis' && (
+                              <button
+                                type="button"
+                                onClick={() => setNewCompJuknis('')}
+                                className="px-2.5 py-1.5 rounded-lg bg-rose-950/80 text-rose-300 text-[11px] cursor-pointer"
+                              >
+                                Reset File/Link
+                              </button>
+                            )}
                           </div>
                         </div>
-                      ))}
+                      </div>
+                    </div>
+                  </form>
+
+                  {/* Existing Competitions List with Inline Edit & Delete */}
+                  <div className="space-y-2.5">
+                    <h4 className="text-xs font-bold text-slate-200">
+                      Daftar Master Cabang Lomba Aktif ({appState.competitions.length}) — Klik &ldquo;Edit&rdquo; untuk mengubah detail atau &ldquo;Hapus&rdquo;
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {appState.competitions.map((comp) => {
+                        const isEditing = editingCompId === comp.id;
+                        return (
+                          <div
+                            key={comp.id}
+                            className="bg-[#021b15] border border-emerald-800/80 rounded-xl p-3.5 space-y-2.5"
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="text-xs font-bold text-white truncate">
+                                  {comp.nama}
+                                </div>
+                                <div className="text-[11px] text-slate-400">
+                                  {comp.kategori} · {comp.jenisPeserta} (Kuota {comp.kuotaPemain}) ·{' '}
+                                  {comp.jadwalRingkas}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleCompStatus(comp.id)}
+                                  className={`px-2.5 py-1 rounded text-[11px] font-bold cursor-pointer ${
+                                    comp.statusPendaftaran === 'Buka'
+                                      ? 'bg-emerald-800 text-emerald-200'
+                                      : 'bg-rose-900 text-rose-200'
+                                  }`}
+                                >
+                                  {comp.statusPendaftaran}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setEditingCompId(isEditing ? null : comp.id)
+                                  }
+                                  className="px-2.5 py-1 rounded bg-[#03251c] hover:bg-emerald-900 border border-emerald-700 text-amber-300 text-[11px] font-semibold cursor-pointer"
+                                >
+                                  {isEditing ? 'Tutup Edit' : 'Edit & Juknis'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteCompetition(comp.id)}
+                                  aria-label={`Hapus ${comp.nama}`}
+                                  className="p-1.5 rounded bg-rose-950/80 hover:bg-rose-900 text-rose-300 cursor-pointer"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+
+                            {isEditing && (
+                              <div className="pt-3 border-t border-emerald-800/70 space-y-3">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                  <input
+                                    type="text"
+                                    value={comp.nama}
+                                    onChange={(e) =>
+                                      handleUpdateCompetitionField(comp.id, { nama: e.target.value })
+                                    }
+                                    placeholder="Nama Lomba"
+                                    className="px-2.5 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
+                                  />
+                                  <input
+                                    type="text"
+                                    value={comp.kategori}
+                                    onChange={(e) =>
+                                      handleUpdateCompetitionField(comp.id, {
+                                        kategori: e.target.value,
+                                      })
+                                    }
+                                    placeholder="Kategori"
+                                    className="px-2.5 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
+                                  />
+                                  <select
+                                    value={comp.jenisPeserta}
+                                    onChange={(e) =>
+                                      handleUpdateCompetitionField(comp.id, {
+                                        jenisPeserta: e.target.value as ParticipantFormat,
+                                      })
+                                    }
+                                    className="px-2.5 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
+                                  >
+                                    <option value="Perorangan/Individu">Perorangan/Individu</option>
+                                    <option value="Ganda">Ganda</option>
+                                    <option value="Beregu/Tim">Beregu/Tim</option>
+                                  </select>
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    max={30}
+                                    value={comp.kuotaPemain}
+                                    onChange={(e) =>
+                                      handleUpdateCompetitionField(comp.id, {
+                                        kuotaPemain: Math.max(1, Number(e.target.value) || 1),
+                                      })
+                                    }
+                                    placeholder="Kuota Pemain"
+                                    className="px-2.5 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
+                                  />
+                                  <input
+                                    type="text"
+                                    value={comp.jadwalRingkas}
+                                    onChange={(e) =>
+                                      handleUpdateCompetitionField(comp.id, {
+                                        jadwalRingkas: e.target.value,
+                                      })
+                                    }
+                                    placeholder="Jadwal Ringkas"
+                                    className="px-2.5 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
+                                  />
+                                  <input
+                                    type="text"
+                                    value={comp.koordinator}
+                                    onChange={(e) =>
+                                      handleUpdateCompetitionField(comp.id, {
+                                        koordinator: e.target.value,
+                                      })
+                                    }
+                                    placeholder="PIC / Koordinator"
+                                    className="px-2.5 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
+                                  />
+                                </div>
+
+                                {/* Juknis Editor Inside Competition Edit Box */}
+                                <div className="p-3 rounded-lg bg-[#03251c]/90 border border-amber-400/40 space-y-2.5">
+                                  <div className="text-[11px] font-bold text-amber-300">
+                                    Kelola Petunjuk Teknis (Juknis) — {comp.nama}
+                                  </div>
+                                  <div className="space-y-1">
+                                    <label className="block text-[11px] text-slate-300">
+                                      Isi Ringkasan / Poin-Poin Aturan Juknis (Tampil di Popup &ldquo;Lihat Juknis&rdquo;):
+                                    </label>
+                                    <textarea
+                                      rows={4}
+                                      value={comp.catatan || ''}
+                                      onChange={(e) =>
+                                        handleUpdateCompetitionField(comp.id, {
+                                          catatan: e.target.value,
+                                        })
+                                      }
+                                      placeholder="Tulis aturan teknis lomba, syarat peserta, sistem pertandingan, pakaian, dll..."
+                                      className="w-full px-2.5 py-1.5 rounded bg-[#021b15] border border-emerald-700 text-xs text-white"
+                                    />
+                                  </div>
+
+                                  <div className="space-y-1.5">
+                                    <label className="block text-[11px] text-slate-300">
+                                      Link Dokumen Juknis (Google Drive / PDF) atau Upload File PDF/Gambar Juknis:
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={
+                                        comp.juknisUrl?.startsWith('data:')
+                                          ? 'File Juknis Lokal Terunggah (Siap Diunduh Peserta)'
+                                          : comp.juknisUrl === '#juknis'
+                                          ? ''
+                                          : comp.juknisUrl
+                                      }
+                                      onChange={(e) =>
+                                        handleUpdateCompetitionField(comp.id, {
+                                          juknisUrl: e.target.value.trim() || '#juknis',
+                                        })
+                                      }
+                                      placeholder="https://drive.google.com/file/d/... (Link PDF Juknis)"
+                                      className="w-full px-2.5 py-1.5 rounded bg-[#021b15] border border-emerald-700 text-xs text-white"
+                                    />
+                                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                                      <label className="px-2.5 py-1.5 rounded bg-emerald-800 hover:bg-emerald-700 text-emerald-100 text-[11px] font-semibold flex items-center gap-1.5 cursor-pointer">
+                                        <Upload className="w-3.5 h-3.5" />
+                                        <span>Upload File PDF / Gambar Juknis</span>
+                                        <input
+                                          type="file"
+                                          accept=".pdf,image/*"
+                                          onChange={(e) => handleUploadJuknisFile(e, comp.id)}
+                                          className="hidden"
+                                        />
+                                      </label>
+                                      {comp.juknisUrl && comp.juknisUrl !== '#juknis' && (
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            handleUpdateCompetitionField(comp.id, {
+                                              juknisUrl: '#juknis',
+                                            })
+                                          }
+                                          className="px-2.5 py-1 rounded bg-rose-950/80 hover:bg-rose-900 text-rose-300 text-[11px] cursor-pointer"
+                                        >
+                                          Hapus File/Link Juknis
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
 
                   {/* Quick Match Scoreboard & Medal Editor */}
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-4 border-t border-emerald-800">
-                    {/* Add Match Score */}
-                    <form
-                      onSubmit={handleAddMatch}
-                      className="bg-[#021b15] border border-emerald-800 rounded-xl p-4 space-y-3"
-                    >
-                      <h4 className="text-xs font-bold text-amber-300">
-                        + Tambah Skor Pertandingan Live
-                      </h4>
-                      <div className="grid grid-cols-2 gap-2">
-                        <input
-                          type="text"
-                          value={newMatchCompName}
-                          onChange={(e) => setNewMatchCompName(e.target.value)}
-                          placeholder="Cabang Lomba"
-                          className="px-3 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
-                        />
-                        <input
-                          type="text"
-                          value={newMatchBabak}
-                          onChange={(e) => setNewMatchBabak(e.target.value)}
-                          placeholder="Babak (Semifinal/Final)"
-                          className="px-3 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
-                        />
-                        <input
-                          type="text"
-                          value={newMatchA}
-                          onChange={(e) => setNewMatchA(e.target.value)}
-                          placeholder="Kontingen A *"
-                          className="px-3 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
-                        />
-                        <input
-                          type="text"
-                          value={newMatchB}
-                          onChange={(e) => setNewMatchB(e.target.value)}
-                          placeholder="Kontingen B *"
-                          className="px-3 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
-                        />
-                        <input
-                          type="text"
-                          value={newMatchSkorA}
-                          onChange={(e) => setNewMatchSkorA(e.target.value)}
-                          placeholder="Skor A"
-                          className="px-3 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
-                        />
-                        <input
-                          type="text"
-                          value={newMatchSkorB}
-                          onChange={(e) => setNewMatchSkorB(e.target.value)}
-                          placeholder="Skor B"
-                          className="px-3 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
-                        />
-                      </div>
-                      <button
-                        type="submit"
-                        className="w-full py-2 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs cursor-pointer"
-                      >
-                        Simpan Skor Pertandingan
-                      </button>
-                    </form>
+                    {/* Add & Edit/Delete Match Scores */}
+                    <div className="bg-[#021b15] border border-emerald-800 rounded-xl p-4 space-y-4">
+                      <form onSubmit={handleAddMatch} className="space-y-3">
+                        <h4 className="text-xs font-bold text-amber-300">
+                          + Tambah & Kelola Skor Pertandingan Live ({appState.matches.length})
+                        </h4>
+                        <div className="grid grid-cols-2 gap-2">
+                          <input
+                            type="text"
+                            value={newMatchCompName}
+                            onChange={(e) => setNewMatchCompName(e.target.value)}
+                            placeholder="Cabang Lomba"
+                            className="px-3 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
+                          />
+                          <input
+                            type="text"
+                            value={newMatchBabak}
+                            onChange={(e) => setNewMatchBabak(e.target.value)}
+                            placeholder="Babak (Semifinal/Final)"
+                            className="px-3 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
+                          />
+                          <input
+                            type="text"
+                            value={newMatchA}
+                            onChange={(e) => setNewMatchA(e.target.value)}
+                            placeholder="Kontingen A *"
+                            className="px-3 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
+                          />
+                          <input
+                            type="text"
+                            value={newMatchB}
+                            onChange={(e) => setNewMatchB(e.target.value)}
+                            placeholder="Kontingen B *"
+                            className="px-3 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
+                          />
+                          <input
+                            type="text"
+                            value={newMatchSkorA}
+                            onChange={(e) => setNewMatchSkorA(e.target.value)}
+                            placeholder="Skor A"
+                            className="px-3 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
+                          />
+                          <input
+                            type="text"
+                            value={newMatchSkorB}
+                            onChange={(e) => setNewMatchSkorB(e.target.value)}
+                            placeholder="Skor B"
+                            className="px-3 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
+                          />
+                        </div>
+                        <button
+                          type="submit"
+                          className="w-full py-2 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs cursor-pointer"
+                        >
+                          + Simpan Pertandingan Baru
+                        </button>
+                      </form>
 
-                    {/* Medal Standings Quick Adjust */}
-                    <div className="bg-[#021b15] border border-emerald-800 rounded-xl p-4 space-y-2.5">
+                      {/* Existing Matches Edit & Delete */}
+                      <div className="space-y-2 max-h-56 overflow-y-auto pr-1 pt-2 border-t border-emerald-800/70">
+                        {appState.matches.map((m) => (
+                          <div
+                            key={m.id}
+                            className="bg-[#03251c] border border-emerald-800/60 rounded-lg p-2.5 space-y-2 text-xs"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <input
+                                type="text"
+                                value={m.competitionName}
+                                onChange={(e) =>
+                                  handleUpdateMatch(m.id, { competitionName: e.target.value })
+                                }
+                                className="px-2 py-0.5 rounded bg-[#021b15] border border-emerald-700 text-[11px] text-amber-300 font-bold w-36"
+                              />
+                              <select
+                                value={m.status}
+                                onChange={(e) =>
+                                  handleUpdateMatch(m.id, {
+                                    status: e.target.value as MatchScore['status'],
+                                  })
+                                }
+                                className="px-2 py-0.5 rounded bg-[#021b15] border border-emerald-700 text-[11px] text-emerald-200"
+                              >
+                                <option value="Belum Mulai">Belum Mulai</option>
+                                <option value="Sedang Berlangsung">Sedang Berlangsung</option>
+                                <option value="Selesai">Selesai</option>
+                              </select>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteMatch(m.id)}
+                                className="p-1 rounded bg-rose-950 text-rose-300 hover:bg-rose-900 cursor-pointer"
+                                title="Hapus Skor Pertandingan"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                            <div className="grid grid-cols-12 gap-1.5 items-center">
+                              <input
+                                type="text"
+                                value={m.kontingenA}
+                                onChange={(e) =>
+                                  handleUpdateMatch(m.id, { kontingenA: e.target.value })
+                                }
+                                className="col-span-4 px-2 py-1 rounded bg-[#021b15] border border-emerald-800 text-[11px] text-white"
+                              />
+                              <input
+                                type="text"
+                                value={m.skorA}
+                                onChange={(e) =>
+                                  handleUpdateMatch(m.id, { skorA: e.target.value })
+                                }
+                                className="col-span-2 px-1.5 py-1 rounded bg-[#021b15] border border-amber-400/50 text-center font-mono-tabular text-xs text-amber-300 font-bold"
+                              />
+                              <input
+                                type="text"
+                                value={m.skorB}
+                                onChange={(e) =>
+                                  handleUpdateMatch(m.id, { skorB: e.target.value })
+                                }
+                                className="col-span-2 px-1.5 py-1 rounded bg-[#021b15] border border-amber-400/50 text-center font-mono-tabular text-xs text-amber-300 font-bold"
+                              />
+                              <input
+                                type="text"
+                                value={m.kontingenB}
+                                onChange={(e) =>
+                                  handleUpdateMatch(m.id, { kontingenB: e.target.value })
+                                }
+                                className="col-span-4 px-2 py-1 rounded bg-[#021b15] border border-emerald-800 text-[11px] text-white"
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Medal Standings Full Edit (+ / - / Add / Delete) */}
+                    <div className="bg-[#021b15] border border-emerald-800 rounded-xl p-4 space-y-3">
                       <h4 className="text-xs font-bold text-amber-300">
-                        Update Cepat Klasemen Medali Kontingen
+                        Kelola Klasemen Medali Kontingen (Tambah / Kurangi / Hapus)
                       </h4>
-                      <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                      <form onSubmit={handleAddMedalRow} className="flex gap-2">
+                        <input
+                          type="text"
+                          value={newMedalSatker}
+                          onChange={(e) => setNewMedalSatker(e.target.value)}
+                          placeholder="Tambah Kontingen/Satker ke Klasemen..."
+                          className="flex-1 px-3 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
+                        />
+                        <button
+                          type="submit"
+                          className="px-3 py-1.5 rounded bg-amber-400 text-slate-950 font-bold text-xs cursor-pointer"
+                        >
+                          + Kontingen
+                        </button>
+                      </form>
+                      <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
                         {appState.medalStandings.map((m) => (
                           <div
                             key={m.id}
-                            className="flex items-center justify-between gap-2 text-xs bg-[#03251c] px-3 py-1.5 rounded-lg"
+                            className="flex flex-wrap items-center justify-between gap-2 text-xs bg-[#03251c] px-3 py-2 rounded-lg"
                           >
-                            <span className="text-white truncate font-medium">{m.satker}</span>
-                            <div className="flex items-center gap-2 shrink-0 font-mono-tabular">
+                            <input
+                              type="text"
+                              value={m.satker}
+                              onChange={(e) =>
+                                onUpdateState((prev) => ({
+                                  ...prev,
+                                  medalStandings: prev.medalStandings.map((row) =>
+                                    row.id === m.id ? { ...row, satker: e.target.value } : row
+                                  ),
+                                }))
+                              }
+                              className="bg-[#021b15] border border-emerald-800 rounded px-2 py-0.5 text-white font-medium text-xs w-40"
+                            />
+                            <div className="flex items-center gap-1.5 shrink-0 font-mono-tabular">
+                              {/* Emas */}
+                              <div className="flex items-center bg-amber-400/15 border border-amber-400/40 rounded px-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateMedal(m.id, 'emas', -1)}
+                                  className="px-1 text-amber-300 hover:text-white cursor-pointer"
+                                >
+                                  -
+                                </button>
+                                <span className="px-1 text-[11px] text-amber-300 font-bold">
+                                  E:{m.emas}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateMedal(m.id, 'emas', 1)}
+                                  className="px-1 text-amber-300 hover:text-white cursor-pointer"
+                                >
+                                  +
+                                </button>
+                              </div>
+                              {/* Perak */}
+                              <div className="flex items-center bg-slate-700/60 border border-slate-500/40 rounded px-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateMedal(m.id, 'perak', -1)}
+                                  className="px-1 text-slate-200 hover:text-white cursor-pointer"
+                                >
+                                  -
+                                </button>
+                                <span className="px-1 text-[11px] text-slate-200 font-bold">
+                                  P:{m.perak}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateMedal(m.id, 'perak', 1)}
+                                  className="px-1 text-slate-200 hover:text-white cursor-pointer"
+                                >
+                                  +
+                                </button>
+                              </div>
+                              {/* Perunggu */}
+                              <div className="flex items-center bg-amber-900/40 border border-amber-700/40 rounded px-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateMedal(m.id, 'perunggu', -1)}
+                                  className="px-1 text-amber-400 hover:text-white cursor-pointer"
+                                >
+                                  -
+                                </button>
+                                <span className="px-1 text-[11px] text-amber-400 font-bold">
+                                  Pr:{m.perunggu}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateMedal(m.id, 'perunggu', 1)}
+                                  className="px-1 text-amber-400 hover:text-white cursor-pointer"
+                                >
+                                  +
+                                </button>
+                              </div>
                               <button
                                 type="button"
-                                onClick={() => handleUpdateMedal(m.id, 'emas', 1)}
-                                className="px-2 py-0.5 rounded bg-amber-400/20 text-amber-300 hover:bg-amber-400/30 cursor-pointer"
+                                onClick={() => handleDeleteMedalRow(m.id)}
+                                className="p-1 rounded bg-rose-950 text-rose-300 hover:bg-rose-900 cursor-pointer"
+                                title="Hapus Kontingen dari Klasemen"
                               >
-                                +Emas ({m.emas})
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleUpdateMedal(m.id, 'perak', 1)}
-                                className="px-2 py-0.5 rounded bg-slate-700 text-slate-200 cursor-pointer"
-                              >
-                                +Perak ({m.perak})
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleUpdateMedal(m.id, 'perunggu', 1)}
-                                className="px-2 py-0.5 rounded bg-amber-900/50 text-amber-400 cursor-pointer"
-                              >
-                                +Prg ({m.perunggu})
+                                <Trash2 className="w-3 h-3" />
                               </button>
                             </div>
                           </div>
@@ -780,7 +1491,7 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
               )}
 
               {/* ===================================================================
-                  TAB 2: JADWAL ACARA, PIN LOKASI PETA 3D & DAMPAK BAKTI SOSIAL
+                  TAB 2: JADWAL ACARA, PIN LOKASI PETA 3D & DAMPAK BAKTI SOSIAL (FULL EDIT/DELETE)
                  =================================================================== */}
               {activeTab === 1 && (
                 <div className="space-y-8">
@@ -857,164 +1568,348 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                     </div>
                   </form>
 
-                  {/* Schedule Items List */}
+                  {/* Schedule Items List with Edit & Delete */}
                   <div className="space-y-2">
                     <h4 className="text-xs font-bold text-slate-200">
-                      Daftar Jadwal Acara ({appState.schedules.length})
+                      Daftar Jadwal Acara ({appState.schedules.length}) — Klik &ldquo;Edit&rdquo; untuk mengubah tanggal/jam/status atau &ldquo;Hapus&rdquo;
                     </h4>
-                    {appState.schedules.map((s) => (
-                      <div
-                        key={s.id}
-                        className="bg-[#021b15] border border-emerald-800/70 rounded-lg p-3 flex items-center justify-between gap-3 text-xs"
-                      >
-                        <div>
-                          <strong className="text-white">{s.judul}</strong>{' '}
-                          <span className="text-amber-300">({s.kategori})</span> · {s.tanggal} ·{' '}
-                          {s.lokasiNama}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            onUpdateState((prev) => ({
-                              ...prev,
-                              schedules: prev.schedules.filter((x) => x.id !== s.id),
-                            }))
-                          }
-                          className="p-1.5 rounded bg-rose-950 text-rose-300 cursor-pointer"
+                    {appState.schedules.map((s) => {
+                      const isEditing = editingSchId === s.id;
+                      return (
+                        <div
+                          key={s.id}
+                          className="bg-[#021b15] border border-emerald-800/70 rounded-lg p-3 space-y-2 text-xs"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    ))}
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <strong className="text-white">{s.judul}</strong>{' '}
+                              <span className="text-amber-300">({s.kategori})</span> · {s.tanggal} ({s.waktu}) ·{' '}
+                              <span className="text-emerald-300">{s.lokasiNama}</span> ·{' '}
+                              <span className="underline">{s.status}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => setEditingSchId(isEditing ? null : s.id)}
+                                className="px-2.5 py-1 rounded bg-[#03251c] border border-emerald-700 text-amber-300 text-[11px] font-semibold cursor-pointer"
+                              >
+                                {isEditing ? 'Tutup Edit' : 'Edit'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  onUpdateState((prev) => ({
+                                    ...prev,
+                                    schedules: prev.schedules.filter((x) => x.id !== s.id),
+                                  }))
+                                }
+                                className="p-1.5 rounded bg-rose-950 text-rose-300 cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+
+                          {isEditing && (
+                            <div className="pt-2 border-t border-emerald-800/70 grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+                              <input
+                                type="text"
+                                value={s.judul}
+                                onChange={(e) =>
+                                  handleUpdateSchedule(s.id, { judul: e.target.value })
+                                }
+                                placeholder="Judul Acara"
+                                className="sm:col-span-2 px-2.5 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
+                              />
+                              <input
+                                type="text"
+                                value={s.kategori}
+                                onChange={(e) =>
+                                  handleUpdateSchedule(s.id, { kategori: e.target.value })
+                                }
+                                placeholder="Kategori"
+                                className="px-2.5 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
+                              />
+                              <input
+                                type="date"
+                                value={s.tanggal}
+                                onChange={(e) =>
+                                  handleUpdateSchedule(s.id, { tanggal: e.target.value })
+                                }
+                                className="px-2.5 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
+                              />
+                              <input
+                                type="text"
+                                value={s.waktu}
+                                onChange={(e) =>
+                                  handleUpdateSchedule(s.id, { waktu: e.target.value })
+                                }
+                                placeholder="Waktu"
+                                className="px-2.5 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
+                              />
+                              <select
+                                value={s.status}
+                                onChange={(e) =>
+                                  handleUpdateSchedule(s.id, {
+                                    status: e.target.value as ScheduleStatus,
+                                  })
+                                }
+                                className="px-2.5 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
+                              >
+                                <option value="Terjadwal">Terjadwal</option>
+                                <option value="Sedang Berlangsung">Sedang Berlangsung</option>
+                                <option value="Ditunda/Pindah Lokasi">Ditunda/Pindah Lokasi</option>
+                                <option value="Selesai">Selesai</option>
+                              </select>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
 
-                  {/* Add 3D Venue Pin & Baksos Tracker */}
+                  {/* Add & Edit/Delete 3D Venue Pin & Baksos Tracker */}
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-4 border-t border-emerald-800">
-                    <form
-                      onSubmit={handleAddVenue}
-                      className="bg-[#021b15] border border-emerald-800 rounded-xl p-4 space-y-3"
-                    >
-                      <h4 className="text-xs font-bold text-amber-300">
-                        + Tambah Pin Lokasi Baru di Peta 2.5D Tojo Una-Una
-                      </h4>
-                      <div className="grid grid-cols-2 gap-2">
-                        <input
-                          type="text"
-                          value={newVenueNama}
-                          onChange={(e) => setNewVenueNama(e.target.value)}
-                          placeholder="Nama Venue / Lokasi *"
-                          className="col-span-2 px-3 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
-                        />
-                        <input
-                          type="text"
-                          value={newVenueGps}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setNewVenueGps(val);
-                            const clean = val.replace(/\s+/g, '');
-                            if (clean.includes(',')) {
-                              setNewVenueMaps(`https://www.google.com/maps?q=${clean}`);
-                            }
-                          }}
-                          placeholder="Koordinat GPS (Lat, Lng) mis. -0.9125845029778236, 121.58667527394272"
-                          className="col-span-2 px-3 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-amber-200 font-mono-tabular"
-                        />
-                        <input
-                          type="number"
-                          value={newVenueX}
-                          onChange={(e) => setNewVenueX(Number(e.target.value))}
-                          placeholder="Koordinat X (-30 s/d 28)"
-                          className="px-3 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
-                        />
-                        <input
-                          type="number"
-                          value={newVenueZ}
-                          onChange={(e) => setNewVenueZ(Number(e.target.value))}
-                          placeholder="Koordinat Z (-16 s/d 14)"
-                          className="px-3 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
-                        />
-                        <select
-                          value={newVenueArch}
-                          onChange={(e) => setNewVenueArch(e.target.value as VenueArchetype)}
-                          className="px-3 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
+                    {/* Venues CRUD */}
+                    <div className="bg-[#021b15] border border-emerald-800 rounded-xl p-4 space-y-4">
+                      <form onSubmit={handleAddVenue} className="space-y-3">
+                        <h4 className="text-xs font-bold text-amber-300">
+                          + Tambah & Kelola Pin Lokasi Peta 2.5D & GPS ({appState.venues.length})
+                        </h4>
+                        <div className="grid grid-cols-2 gap-2">
+                          <input
+                            type="text"
+                            value={newVenueNama}
+                            onChange={(e) => setNewVenueNama(e.target.value)}
+                            placeholder="Nama Venue / Lokasi *"
+                            className="col-span-2 px-3 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
+                          />
+                          <input
+                            type="text"
+                            value={newVenueGps}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setNewVenueGps(val);
+                              const clean = val.replace(/\s+/g, '');
+                              if (clean.includes(',')) {
+                                setNewVenueMaps(`https://www.google.com/maps?q=${clean}`);
+                              }
+                            }}
+                            placeholder="Koordinat GPS (Lat, Lng) mis. -0.9125845029778236, 121.58667527394272"
+                            className="col-span-2 px-3 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-amber-200 font-mono-tabular"
+                          />
+                          <input
+                            type="number"
+                            value={newVenueX}
+                            onChange={(e) => setNewVenueX(Number(e.target.value))}
+                            placeholder="Koordinat X (-30 s/d 28)"
+                            className="px-3 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
+                          />
+                          <input
+                            type="number"
+                            value={newVenueZ}
+                            onChange={(e) => setNewVenueZ(Number(e.target.value))}
+                            placeholder="Koordinat Z (-16 s/d 14)"
+                            className="px-3 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
+                          />
+                          <select
+                            value={newVenueArch}
+                            onChange={(e) => setNewVenueArch(e.target.value as VenueArchetype)}
+                            className="px-3 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
+                          >
+                            <option value="kantor_kemenag">Gedung Kantor Kemenag</option>
+                            <option value="lapangan_utama">Lapangan Terbuka</option>
+                            <option value="gor_olahraga">GOR Olahraga</option>
+                            <option value="masjid_agung">Masjid Agung</option>
+                            <option value="aula_kerukunan">Aula Kerukunan</option>
+                            <option value="pelabuhan_kepulauan">Zona Kepulauan</option>
+                          </select>
+                          <input
+                            type="text"
+                            value={newVenueMaps}
+                            onChange={(e) => setNewVenueMaps(e.target.value)}
+                            placeholder="Link Google Maps"
+                            className="px-3 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
+                          />
+                        </div>
+                        <button
+                          type="submit"
+                          className="w-full py-2 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs cursor-pointer"
                         >
-                          <option value="kantor_kemenag">Gedung Kantor Kemenag</option>
-                          <option value="lapangan_utama">Lapangan Terbuka</option>
-                          <option value="gor_olahraga">GOR Olahraga</option>
-                          <option value="masjid_agung">Masjid Agung</option>
-                          <option value="aula_kerukunan">Aula Kerukunan</option>
-                          <option value="pelabuhan_kepulauan">Zona Kepulauan</option>
-                        </select>
-                        <input
-                          type="text"
-                          value={newVenueMaps}
-                          onChange={(e) => setNewVenueMaps(e.target.value)}
-                          placeholder="Link Google Maps"
-                          className="px-3 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
-                        />
-                      </div>
-                      <button
-                        type="submit"
-                        className="w-full py-2 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs cursor-pointer"
-                      >
-                        Tambahkan Pin ke Peta 2.5D & GPS
-                      </button>
-                    </form>
+                          + Tambahkan Pin ke Peta 2.5D & GPS
+                        </button>
+                      </form>
 
-                    <form
-                      onSubmit={handleAddBaksos}
-                      className="bg-[#021b15] border border-emerald-800 rounded-xl p-4 space-y-3"
-                    >
-                      <h4 className="text-xs font-bold text-amber-300">
-                        + Tambah Indikator Dampak Bakti Sosial
-                      </h4>
-                      <div className="grid grid-cols-2 gap-2">
-                        <input
-                          type="text"
-                          value={newBaksosNama}
-                          onChange={(e) => setNewBaksosNama(e.target.value)}
-                          placeholder="Nama Program Baksos *"
-                          className="col-span-2 px-3 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
-                        />
-                        <input
-                          type="number"
-                          value={newBaksosCapaian}
-                          onChange={(e) => setNewBaksosCapaian(Number(e.target.value))}
-                          placeholder="Capaian Saat Ini"
-                          className="px-3 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
-                        />
-                        <input
-                          type="number"
-                          value={newBaksosTarget}
-                          onChange={(e) => setNewBaksosTarget(Number(e.target.value))}
-                          placeholder="Target Total"
-                          className="px-3 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
-                        />
-                        <input
-                          type="text"
-                          value={newBaksosSatuan}
-                          onChange={(e) => setNewBaksosSatuan(e.target.value)}
-                          placeholder="Satuan (Kantong / Paket / Titik)"
-                          className="col-span-2 px-3 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
-                        />
+                      {/* Existing Venues Edit/Delete */}
+                      <div className="space-y-2 max-h-56 overflow-y-auto pr-1 pt-2 border-t border-emerald-800/70">
+                        {appState.venues.map((v) => (
+                          <div
+                            key={v.id}
+                            className="bg-[#03251c] border border-emerald-800/60 rounded-lg p-2.5 space-y-1.5 text-xs"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <input
+                                type="text"
+                                value={v.nama}
+                                onChange={(e) => handleUpdateVenue(v.id, { nama: e.target.value })}
+                                className="flex-1 px-2 py-1 rounded bg-[#021b15] border border-emerald-700 text-white font-bold text-xs"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteVenue(v.id)}
+                                className="p-1.5 rounded bg-rose-950 text-rose-300 hover:bg-rose-900 cursor-pointer"
+                                title="Hapus Pin Lokasi"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                            <div className="grid grid-cols-2 gap-1.5">
+                              <input
+                                type="text"
+                                value={v.alamat}
+                                onChange={(e) =>
+                                  handleUpdateVenue(v.id, { alamat: e.target.value })
+                                }
+                                placeholder="Alamat"
+                                className="px-2 py-1 rounded bg-[#021b15] border border-emerald-800 text-[11px] text-slate-200"
+                              />
+                              <input
+                                type="text"
+                                value={v.koordinatGps || `${v.latitude}, ${v.longitude}`}
+                                onChange={(e) =>
+                                  handleUpdateVenue(v.id, { koordinatGps: e.target.value })
+                                }
+                                placeholder="Lat, Lng GPS"
+                                className="px-2 py-1 rounded bg-[#021b15] border border-emerald-800 text-[11px] text-amber-300 font-mono-tabular"
+                              />
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                      <button
-                        type="submit"
-                        className="w-full py-2 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs cursor-pointer"
-                      >
-                        Tambahkan Indikator Bakti Sosial
-                      </button>
-                    </form>
+                    </div>
+
+                    {/* Baksos CRUD */}
+                    <div className="bg-[#021b15] border border-emerald-800 rounded-xl p-4 space-y-4">
+                      <form onSubmit={handleAddBaksos} className="space-y-3">
+                        <h4 className="text-xs font-bold text-amber-300">
+                          + Tambah & Kelola Indikator Dampak Bakti Sosial ({appState.baksosMetrics.length})
+                        </h4>
+                        <div className="grid grid-cols-2 gap-2">
+                          <input
+                            type="text"
+                            value={newBaksosNama}
+                            onChange={(e) => setNewBaksosNama(e.target.value)}
+                            placeholder="Nama Program Baksos *"
+                            className="col-span-2 px-3 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
+                          />
+                          <input
+                            type="number"
+                            value={newBaksosCapaian}
+                            onChange={(e) => setNewBaksosCapaian(Number(e.target.value))}
+                            placeholder="Capaian Saat Ini"
+                            className="px-3 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
+                          />
+                          <input
+                            type="number"
+                            value={newBaksosTarget}
+                            onChange={(e) => setNewBaksosTarget(Number(e.target.value))}
+                            placeholder="Target Total"
+                            className="px-3 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
+                          />
+                          <input
+                            type="text"
+                            value={newBaksosSatuan}
+                            onChange={(e) => setNewBaksosSatuan(e.target.value)}
+                            placeholder="Satuan (Kantong / Paket / Titik)"
+                            className="col-span-2 px-3 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
+                          />
+                        </div>
+                        <button
+                          type="submit"
+                          className="w-full py-2 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs cursor-pointer"
+                        >
+                          + Tambahkan Indikator Bakti Sosial
+                        </button>
+                      </form>
+
+                      {/* Existing Baksos Edit/Delete */}
+                      <div className="space-y-2 max-h-56 overflow-y-auto pr-1 pt-2 border-t border-emerald-800/70">
+                        {appState.baksosMetrics.map((b) => (
+                          <div
+                            key={b.id}
+                            className="bg-[#03251c] border border-emerald-800/60 rounded-lg p-2.5 space-y-1.5 text-xs"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <input
+                                type="text"
+                                value={b.namaProgram}
+                                onChange={(e) =>
+                                  handleUpdateBaksos(b.id, { namaProgram: e.target.value })
+                                }
+                                className="flex-1 px-2 py-1 rounded bg-[#021b15] border border-emerald-700 text-white font-bold text-xs"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteBaksos(b.id)}
+                                className="p-1.5 rounded bg-rose-950 text-rose-300 hover:bg-rose-900 cursor-pointer"
+                                title="Hapus Program Baksos"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                            <div className="grid grid-cols-3 gap-1.5 items-center">
+                              <div>
+                                <span className="text-[10px] text-slate-400 block">Capaian</span>
+                                <input
+                                  type="number"
+                                  value={b.capaian}
+                                  onChange={(e) =>
+                                    handleUpdateBaksos(b.id, {
+                                      capaian: Math.max(0, Number(e.target.value) || 0),
+                                    })
+                                  }
+                                  className="w-full px-2 py-1 rounded bg-[#021b15] border border-emerald-800 text-amber-300 font-mono-tabular text-xs"
+                                />
+                              </div>
+                              <div>
+                                <span className="text-[10px] text-slate-400 block">Target</span>
+                                <input
+                                  type="number"
+                                  value={b.target}
+                                  onChange={(e) =>
+                                    handleUpdateBaksos(b.id, {
+                                      target: Math.max(1, Number(e.target.value) || 1),
+                                    })
+                                  }
+                                  className="w-full px-2 py-1 rounded bg-[#021b15] border border-emerald-800 text-white font-mono-tabular text-xs"
+                                />
+                              </div>
+                              <div>
+                                <span className="text-[10px] text-slate-400 block">Satuan</span>
+                                <input
+                                  type="text"
+                                  value={b.satuan}
+                                  onChange={(e) =>
+                                    handleUpdateBaksos(b.id, { satuan: e.target.value })
+                                  }
+                                  className="w-full px-2 py-1 rounded bg-[#021b15] border border-emerald-800 text-slate-200 text-xs"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
 
               {/* ===================================================================
-                  TAB 3: MASTER SATKER / KONTINGEN & DATA PENDAFTAR LOMBA
+                  TAB 3: MASTER SATKER / KONTINGEN & DATA PENDAFTAR LOMBA (FULL EDIT/DELETE)
                  =================================================================== */}
               {activeTab === 2 && (
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                  {/* Satker CRUD */}
+                  {/* Satker CRUD (Add, Edit/Rename, Delete) */}
                   <div className="lg:col-span-5 bg-[#021b15] border border-emerald-800 rounded-xl p-4 space-y-4">
                     <h3 className="text-sm font-bold text-amber-300">
                       Master Satker / KUA / Madrasah ({appState.satkerList.length})
@@ -1034,177 +1929,919 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                         + Tambah
                       </button>
                     </form>
-                    <div className="space-y-1.5 max-h-80 overflow-y-auto pr-1">
-                      {appState.satkerList.map((s) => (
+                    <div className="space-y-1.5 max-h-96 overflow-y-auto pr-1">
+                      {appState.satkerList.map((s, idx) => (
                         <div
-                          key={s}
-                          className="flex items-center justify-between bg-[#03251c] px-3 py-1.5 rounded-lg text-xs text-slate-200"
+                          key={`${s}-${idx}`}
+                          className="flex items-center justify-between gap-2 bg-[#03251c] px-3 py-1.5 rounded-lg text-xs text-slate-200"
                         >
-                          <span className="truncate">{s}</span>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              onUpdateState((prev) => ({
-                                ...prev,
-                                satkerList: prev.satkerList.filter((item) => item !== s),
-                              }))
-                            }
-                            className="text-rose-400 hover:text-rose-300 ml-2 cursor-pointer"
-                          >
-                            Hapus
-                          </button>
+                          {editingSatkerIdx === idx ? (
+                            <div className="flex items-center gap-1.5 flex-1">
+                              <input
+                                type="text"
+                                value={editingSatkerValue}
+                                onChange={(e) => setEditingSatkerValue(e.target.value)}
+                                className="flex-1 px-2 py-1 rounded bg-[#021b15] border border-amber-400 text-xs text-white"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleSaveRenameSatker(idx)}
+                                className="px-2 py-1 rounded bg-emerald-700 text-white text-[11px] font-bold cursor-pointer"
+                              >
+                                Simpan
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="truncate flex-1">{s}</span>
+                          )}
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (editingSatkerIdx === idx) {
+                                  setEditingSatkerIdx(null);
+                                } else {
+                                  setEditingSatkerIdx(idx);
+                                  setEditingSatkerValue(s);
+                                }
+                              }}
+                              className="text-amber-300 hover:text-amber-200 cursor-pointer"
+                            >
+                              {editingSatkerIdx === idx ? 'Batal' : 'Edit'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onUpdateState((prev) => ({
+                                  ...prev,
+                                  satkerList: prev.satkerList.filter((_, i) => i !== idx),
+                                }))
+                              }
+                              className="text-rose-400 hover:text-rose-300 cursor-pointer"
+                            >
+                              Hapus
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
                   </div>
 
-                  {/* Registered Teams Management */}
+                  {/* Registered Teams Management (Edit & Delete) */}
                   <div className="lg:col-span-7 bg-[#021b15] border border-emerald-800 rounded-xl p-4 space-y-4">
                     <h3 className="text-sm font-bold text-amber-300">
                       Data Kontingen & Peserta Lomba Terdaftar ({appState.registrations.length})
                     </h3>
                     <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
-                      {appState.registrations.map((reg) => (
-                        <div
-                          key={reg.id}
-                          className="bg-[#03251c] border border-emerald-800/70 rounded-lg p-3 flex items-center justify-between gap-3 text-xs"
-                        >
-                          <div>
-                            <div className="font-bold text-white">
-                              {reg.namaTimAtauPeserta} —{' '}
-                              <span className="text-amber-300">{reg.competitionName}</span>
-                            </div>
-                            <div className="text-slate-300">
-                              {reg.satker} · WA: {reg.kontakWhatsapp} · Pemain:{' '}
-                              {reg.daftarPemain.join(', ')}
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              onUpdateState((prev) => ({
-                                ...prev,
-                                registrations: prev.registrations.filter((r) => r.id !== reg.id),
-                              }))
-                            }
-                            className="p-1.5 rounded bg-rose-950 text-rose-300 cursor-pointer shrink-0"
+                      {appState.registrations.map((reg) => {
+                        const isEditing = editingRegId === reg.id;
+                        return (
+                          <div
+                            key={reg.id}
+                            className="bg-[#03251c] border border-emerald-800/70 rounded-lg p-3 space-y-2 text-xs"
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      ))}
+                            <div className="flex items-center justify-between gap-3">
+                              <div>
+                                <div className="font-bold text-white">
+                                  {reg.namaTimAtauPeserta} —{' '}
+                                  <span className="text-amber-300">{reg.competitionName}</span>
+                                </div>
+                                <div className="text-slate-300">
+                                  {reg.satker} · WA: {reg.kontakWhatsapp} · Pemain:{' '}
+                                  {reg.daftarPemain.join(', ')}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingRegId(isEditing ? null : reg.id)}
+                                  className="px-2.5 py-1 rounded bg-[#021b15] border border-emerald-700 text-amber-300 text-[11px] font-semibold cursor-pointer"
+                                >
+                                  {isEditing ? 'Tutup Edit' : 'Edit'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    onUpdateState((prev) => ({
+                                      ...prev,
+                                      registrations: prev.registrations.filter(
+                                        (r) => r.id !== reg.id
+                                      ),
+                                    }))
+                                  }
+                                  className="p-1.5 rounded bg-rose-950 text-rose-300 cursor-pointer shrink-0"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+
+                            {isEditing && (
+                              <div className="pt-2 border-t border-emerald-800/70 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <input
+                                  type="text"
+                                  value={reg.namaTimAtauPeserta}
+                                  onChange={(e) =>
+                                    onUpdateState((prev) => ({
+                                      ...prev,
+                                      registrations: prev.registrations.map((r) =>
+                                        r.id === reg.id
+                                          ? { ...r, namaTimAtauPeserta: e.target.value }
+                                          : r
+                                      ),
+                                    }))
+                                  }
+                                  placeholder="Nama Tim / Peserta"
+                                  className="px-2.5 py-1.5 rounded bg-[#021b15] border border-emerald-700 text-xs text-white"
+                                />
+                                <input
+                                  type="text"
+                                  value={reg.satker}
+                                  onChange={(e) =>
+                                    onUpdateState((prev) => ({
+                                      ...prev,
+                                      registrations: prev.registrations.map((r) =>
+                                        r.id === reg.id ? { ...r, satker: e.target.value } : r
+                                      ),
+                                    }))
+                                  }
+                                  placeholder="Asal Satker"
+                                  className="px-2.5 py-1.5 rounded bg-[#021b15] border border-emerald-700 text-xs text-white"
+                                />
+                                <input
+                                  type="text"
+                                  value={reg.kontakWhatsapp}
+                                  onChange={(e) =>
+                                    onUpdateState((prev) => ({
+                                      ...prev,
+                                      registrations: prev.registrations.map((r) =>
+                                        r.id === reg.id
+                                          ? { ...r, kontakWhatsapp: e.target.value }
+                                          : r
+                                      ),
+                                    }))
+                                  }
+                                  placeholder="No. WhatsApp"
+                                  className="px-2.5 py-1.5 rounded bg-[#021b15] border border-emerald-700 text-xs text-white"
+                                />
+                                <input
+                                  type="text"
+                                  value={reg.daftarPemain.join(', ')}
+                                  onChange={(e) =>
+                                    onUpdateState((prev) => ({
+                                      ...prev,
+                                      registrations: prev.registrations.map((r) =>
+                                        r.id === reg.id
+                                          ? {
+                                              ...r,
+                                              daftarPemain: e.target.value
+                                                .split(',')
+                                                .map((x) => x.trim())
+                                                .filter(Boolean),
+                                            }
+                                          : r
+                                      ),
+                                    }))
+                                  }
+                                  placeholder="Daftar Pemain (pisahkan koma)"
+                                  className="px-2.5 py-1.5 rounded bg-[#021b15] border border-emerald-700 text-xs text-white"
+                                />
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
               )}
 
               {/* ===================================================================
-                  TAB 4: KUPON JALAN SEHAT & MODERASI UCAPAN
+                  TAB 4: GALERI VIDEO YOUTUBE, KUPON JALAN SEHAT & MODERASI UCAPAN
                  =================================================================== */}
               {activeTab === 3 && (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div className="bg-[#021b15] border border-emerald-800 rounded-xl p-4 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-sm font-bold text-amber-300">
-                        Data Kupon QR Jalan Sehat ({appState.coupons.length})
+                <div className="space-y-6">
+                  {/* Video & YouTube Gallery Admin CRUD */}
+                  <div className="bg-[#021b15] border border-emerald-800 rounded-xl p-5 space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h3 className="text-sm font-bold text-amber-300 flex items-center gap-2">
+                        <Video className="w-4 h-4" />
+                        <span>
+                          Kelola Galeri Video, Upload File MP4 (Khusus Admin) & Link YouTube ({videosList.length})
+                        </span>
                       </h3>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onUpdateState((prev) => ({
-                            ...prev,
-                            coupons: prev.coupons.map((c) => ({
-                              ...c,
-                              sudahMenang: false,
-                              hadiahDimenangkan: undefined,
-                            })),
-                          }));
-                          notify('Status pemenang undian kupon berhasil direset.');
-                        }}
-                        className="text-xs text-emerald-300 underline cursor-pointer"
-                      >
-                        Reset Status Pemenang
-                      </button>
+                      <span className="text-[11px] text-emerald-300">
+                        Pengguna publik hanya dapat mengirim Link YouTube · Upload File MP4 hanya tersedia di Panel Admin ini
+                      </span>
                     </div>
-                    <div className="space-y-1.5 max-h-80 overflow-y-auto pr-1">
-                      {appState.coupons.map((c) => (
-                        <div
-                          key={c.id}
-                          className="bg-[#03251c] px-3 py-2 rounded-lg text-xs flex items-center justify-between gap-2"
+
+                    <form onSubmit={handleAddVideoAdmin} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                      <input
+                        type="text"
+                        value={newVidJudul}
+                        onChange={(e) => setNewVidJudul(e.target.value)}
+                        placeholder="Judul Video / Live Streaming *"
+                        className="px-3 py-2 rounded-lg bg-[#03251c] border border-emerald-700 text-xs text-white"
+                      />
+                      <select
+                        value={newVidKat}
+                        onChange={(e) => setNewVidKat(e.target.value)}
+                        className="px-3 py-2 rounded-lg bg-[#03251c] border border-emerald-700 text-xs text-white"
+                      >
+                        <option value="Live Streaming & Upacara">Live Streaming & Upacara</option>
+                        <option value="Lomba Video Kreatif & Moderasi">Lomba Video Kreatif & Moderasi</option>
+                        <option value="Profil & Inovasi Satker">Profil & Inovasi Satker</option>
+                        <option value="Dokumentasi Porseni & Baksos">Dokumentasi Porseni & Baksos</option>
+                      </select>
+                      <select
+                        value={newVidSatker}
+                        onChange={(e) => setNewVidSatker(e.target.value)}
+                        className="px-3 py-2 rounded-lg bg-[#03251c] border border-emerald-700 text-xs text-white"
+                      >
+                        {appState.satkerList.map((s) => (
+                          <option key={s} value={s}>
+                            {s}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="flex gap-1.5">
+                        <input
+                          type="text"
+                          value={newVidUrl}
+                          onChange={(e) => setNewVidUrl(e.target.value)}
+                          placeholder="Link YouTube atau URL .MP4 *"
+                          className="flex-1 px-3 py-2 rounded-lg bg-[#03251c] border border-emerald-700 text-xs text-amber-200 font-mono-tabular min-w-0"
+                        />
+                        <label
+                          title="Unggah File Video MP4/WebM dari Komputer/HP Admin"
+                          className="px-2.5 py-2 rounded-lg bg-emerald-800 hover:bg-emerald-700 border border-amber-400/50 text-amber-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer shrink-0"
                         >
-                          <div>
-                            <span className="font-mono-tabular text-amber-300 font-bold mr-2">
-                              {c.nomorKupon}
-                            </span>
-                            <strong className="text-white">{c.namaPeserta}</strong> ({c.satkerAtauUmum})
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              onUpdateState((prev) => ({
-                                ...prev,
-                                coupons: prev.coupons.filter((x) => x.id !== c.id),
-                              }))
-                            }
-                            className="text-rose-400 hover:text-rose-300 cursor-pointer"
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>File MP4</span>
+                          <input
+                            type="file"
+                            accept="video/mp4,video/webm"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              const maxBytes = 4 * 1024 * 1024;
+                              if (file.size > maxBytes) {
+                                notify(
+                                  `Ukuran file (${(file.size / (1024 * 1024)).toFixed(1)} MB) melebihi batas memori lokal browser (4 MB). Gunakan file MP4 pendek ≤ 4 MB atau masukkan URL file MP4.`
+                                );
+                                return;
+                              }
+                              const reader = new FileReader();
+                              reader.onload = () => {
+                                if (typeof reader.result === 'string') {
+                                  setNewVidUrl(reader.result);
+                                  if (!newVidJudul.trim()) {
+                                    setNewVidJudul(file.name.replace(/\.[^/.]+$/, ''));
+                                  }
+                                  notify(`File video "${file.name}" siap disimpan oleh Admin.`);
+                                }
+                              };
+                              reader.readAsDataURL(file);
+                            }}
+                            className="hidden"
+                          />
+                        </label>
+                      </div>
+                      <input
+                        type="text"
+                        value={newVidDesc}
+                        onChange={(e) => setNewVidDesc(e.target.value)}
+                        placeholder="Deskripsi singkat video..."
+                        className="sm:col-span-3 px-3 py-2 rounded-lg bg-[#03251c] border border-emerald-700 text-xs text-white"
+                      />
+                      <button
+                        type="submit"
+                        className="px-4 py-2 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>Simpan Video (Admin)</span>
+                      </button>
+                    </form>
+
+                    {/* Video Items List with Edit, Toggle & Delete */}
+                    <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                      {videosList.map((vid) => {
+                        const isEditing = editingVidId === vid.id;
+                        const currentUrl = vid.youtubeUrl || vid.videoFileUrl || '';
+                        return (
+                          <div
+                            key={vid.id}
+                            className="bg-[#03251c] border border-emerald-800/70 rounded-lg p-3 space-y-2 text-xs"
                           >
-                            Hapus
-                          </button>
-                        </div>
-                      ))}
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="font-bold text-white truncate">
+                                  {vid.judul}{' '}
+                                  <span className="text-amber-300">({vid.kategori})</span>
+                                </div>
+                                <div className="text-[11px] text-slate-400 truncate">
+                                  {vid.satker} · {vid.sumberipe === 'youtube' ? 'YouTube' : 'MP4'} ·{' '}
+                                  <span className="font-mono-tabular text-emerald-300">
+                                    {currentUrl.slice(0, 60)}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleUpdateVideo(vid.id, { disetujui: !vid.disetujui })
+                                  }
+                                  className={`px-2 py-1 rounded text-[11px] font-semibold cursor-pointer ${
+                                    vid.disetujui
+                                      ? 'bg-emerald-800 text-emerald-200'
+                                      : 'bg-slate-800 text-slate-400'
+                                  }`}
+                                >
+                                  {vid.disetujui ? 'Tampil' : 'Tersembunyi'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingVidId(isEditing ? null : vid.id)}
+                                  className="px-2.5 py-1 rounded bg-[#021b15] border border-emerald-700 text-amber-300 text-[11px] font-semibold cursor-pointer"
+                                >
+                                  {isEditing ? 'Tutup Edit' : 'Edit'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteVideo(vid.id)}
+                                  className="p-1.5 rounded bg-rose-950 text-rose-300 cursor-pointer"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+
+                            {isEditing && (
+                              <div className="pt-2 border-t border-emerald-800/70 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                                <input
+                                  type="text"
+                                  value={vid.judul}
+                                  onChange={(e) =>
+                                    handleUpdateVideo(vid.id, { judul: e.target.value })
+                                  }
+                                  placeholder="Judul Video"
+                                  className="px-2.5 py-1.5 rounded bg-[#021b15] border border-emerald-700 text-xs text-white"
+                                />
+                                <input
+                                  type="text"
+                                  value={vid.satker}
+                                  onChange={(e) =>
+                                    handleUpdateVideo(vid.id, { satker: e.target.value })
+                                  }
+                                  placeholder="Satker"
+                                  className="px-2.5 py-1.5 rounded bg-[#021b15] border border-emerald-700 text-xs text-white"
+                                />
+                                <input
+                                  type="text"
+                                  value={currentUrl}
+                                  onChange={(e) =>
+                                    handleUpdateVideo(vid.id, { youtubeUrl: e.target.value })
+                                  }
+                                  placeholder="Link YouTube / URL Video"
+                                  className="sm:col-span-2 px-2.5 py-1.5 rounded bg-[#021b15] border border-emerald-700 text-xs text-amber-300 font-mono-tabular"
+                                />
+                                <input
+                                  type="text"
+                                  value={vid.deskripsi || ''}
+                                  onChange={(e) =>
+                                    handleUpdateVideo(vid.id, { deskripsi: e.target.value })
+                                  }
+                                  placeholder="Deskripsi Video"
+                                  className="sm:col-span-4 px-2.5 py-1.5 rounded bg-[#021b15] border border-emerald-700 text-xs text-slate-200"
+                                />
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
 
-                  <div className="bg-[#021b15] border border-emerald-800 rounded-xl p-4 space-y-3">
-                    <h3 className="text-sm font-bold text-amber-300">
-                      Moderasi Ucapan & Kotak Aspirasi ({appState.messages.length})
-                    </h3>
-                    <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
-                      {appState.messages.map((m) => (
-                        <div
-                          key={m.id}
-                          className="bg-[#03251c] p-3 rounded-lg text-xs flex items-start justify-between gap-3"
+                  {/* Satker Banner, Spanduk Ucapan & Activity Photos Admin CRUD */}
+                  <div className="bg-[#021b15] border border-amber-400/50 rounded-xl p-5 space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h3 className="text-sm font-bold text-amber-300">
+                        Kelola Spanduk, Banner Ucapan & Foto Kegiatan Satker ({bannersList.length})
+                      </h3>
+                      <span className="text-[11px] text-emerald-300">
+                        Unggah file gambar spanduk (kompresi otomatis) atau masukkan Link URL gambar untuk setiap Satker · State bannerUcapan opsional
+                      </span>
+                    </div>
+
+                    <form
+                      onSubmit={handleAddSatkerBannerAdmin}
+                      className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3"
+                    >
+                      <select
+                        value={newBannerSatker}
+                        onChange={(e) => setNewBannerSatker(e.target.value)}
+                        className="px-3 py-2 rounded-lg bg-[#03251c] border border-emerald-700 text-xs text-white"
+                      >
+                        {appState.satkerList.map((s) => (
+                          <option key={s} value={s}>
+                            {s}
+                          </option>
+                        ))}
+                      </select>
+
+                      <select
+                        value={newBannerKat}
+                        onChange={(e) => setNewBannerKat(e.target.value as SatkerBannerCategory)}
+                        className="px-3 py-2 rounded-lg bg-[#03251c] border border-emerald-700 text-xs text-white"
+                      >
+                        <option value="Spanduk & Banner Ucapan">Spanduk & Banner Ucapan</option>
+                        <option value="Persiapan Lomba">Persiapan Lomba</option>
+                        <option value="Baksos">Baksos</option>
+                        <option value="Kunjungan Kerja">Kunjungan Kerja</option>
+                        <option value="Upacara & Seremonial">Upacara & Seremonial</option>
+                      </select>
+
+                      <input
+                        type="text"
+                        value={newBannerJudul}
+                        onChange={(e) => setNewBannerJudul(e.target.value)}
+                        placeholder="Judul Spanduk / Foto Kegiatan *"
+                        className="sm:col-span-2 px-3 py-2 rounded-lg bg-[#03251c] border border-emerald-700 text-xs text-white"
+                      />
+
+                      <div className="sm:col-span-2 flex gap-1.5">
+                        <input
+                          type="text"
+                          value={
+                            newBannerImageUrl.startsWith('data:')
+                              ? 'File Gambar Terkompresi Siap Disimpan'
+                              : newBannerImageUrl
+                          }
+                          onChange={(e) => setNewBannerImageUrl(e.target.value)}
+                          placeholder="Masukkan Link URL Gambar / Google Drive *"
+                          className="flex-1 px-3 py-2 rounded-lg bg-[#03251c] border border-emerald-700 text-xs text-amber-200 font-mono-tabular min-w-0"
+                        />
+                        <label
+                          title="Unggah File Gambar Spanduk / Foto (Otomatis Dikompresi)"
+                          className="px-3 py-2 rounded-lg bg-emerald-800 hover:bg-emerald-700 border border-amber-400/50 text-amber-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer shrink-0"
                         >
-                          <div>
-                            <div className="font-bold text-white">
-                              {m.nama} <span className="text-amber-300">({m.kategori})</span>
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>Upload Gambar</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              try {
+                                const { dataUrl, sizeKb } = await compressBannerImageFile(
+                                  file,
+                                  1280,
+                                  0.78
+                                );
+                                setNewBannerImageUrl(dataUrl);
+                                if (!newBannerJudul.trim()) {
+                                  setNewBannerJudul(
+                                    file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ')
+                                  );
+                                }
+                                notify(
+                                  `Gambar spanduk "${file.name}" berhasil dikompresi (~${sizeKb} KB) & siap disimpan.`
+                                );
+                              } catch {
+                                notify('Gagal membaca file gambar.');
+                              }
+                              e.target.value = '';
+                            }}
+                            className="hidden"
+                          />
+                        </label>
+                      </div>
+
+                      <input
+                        type="text"
+                        value={newBannerUcapan}
+                        onChange={(e) => setNewBannerUcapan(e.target.value)}
+                        placeholder="Teks bannerUcapan Satker (Opsional — mis. Dirgahayu HAB ke-81...)"
+                        className="sm:col-span-2 px-3 py-2 rounded-lg bg-[#03251c] border border-emerald-700 text-xs text-white"
+                      />
+
+                      <input
+                        type="text"
+                        value={newBannerKet}
+                        onChange={(e) => setNewBannerKet(e.target.value)}
+                        placeholder="Keterangan tambahan lokasi / kegiatan (Opsional)"
+                        className="sm:col-span-3 px-3 py-2 rounded-lg bg-[#03251c] border border-emerald-700 text-xs text-white"
+                      />
+
+                      <button
+                        type="submit"
+                        className="px-4 py-2 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>Simpan Spanduk Satker</span>
+                      </button>
+                    </form>
+
+                    {/* Existing Satker Banners List with Inline Edit & Delete */}
+                    <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                      {bannersList.map((bnr) => {
+                        const isEditing = editingBannerId === bnr.id;
+                        return (
+                          <div
+                            key={bnr.id}
+                            className="bg-[#03251c] border border-emerald-800/70 rounded-lg p-3 space-y-2 text-xs"
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="flex items-center gap-3 min-w-0">
+                                <img
+                                  src={normalizeBannerImageUrl(bnr.imageUrl)}
+                                  alt={bnr.judul}
+                                  referrerPolicy="no-referrer"
+                                  className="w-16 h-10 object-cover rounded border border-emerald-700 bg-[#021b15] shrink-0"
+                                />
+                                <div className="min-w-0">
+                                  <div className="font-bold text-white truncate">
+                                    {bnr.judul}{' '}
+                                    <span className="text-amber-300">({bnr.kategori})</span>
+                                  </div>
+                                  <div className="text-[11px] text-slate-300 truncate">
+                                    {bnr.satker}
+                                    {bnr.bannerUcapan ? ` · "${bnr.bannerUcapan}"` : ''}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setEditingBannerId(isEditing ? null : bnr.id)
+                                  }
+                                  className="px-2.5 py-1 rounded bg-[#021b15] border border-emerald-700 text-amber-300 text-[11px] font-semibold cursor-pointer"
+                                >
+                                  {isEditing ? 'Tutup Edit' : 'Edit'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteSatkerBanner(bnr.id)}
+                                  className="p-1.5 rounded bg-rose-950 text-rose-300 hover:bg-rose-900 cursor-pointer"
+                                  title="Hapus Spanduk Satker"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
                             </div>
-                            <p className="text-slate-300 mt-0.5">{m.pesan}</p>
+
+                            {isEditing && (
+                              <div className="pt-2 border-t border-emerald-800/70 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                                <select
+                                  value={bnr.satker}
+                                  onChange={(e) =>
+                                    handleUpdateSatkerBanner(bnr.id, { satker: e.target.value })
+                                  }
+                                  className="px-2.5 py-1.5 rounded bg-[#021b15] border border-emerald-700 text-xs text-white"
+                                >
+                                  {appState.satkerList.map((s) => (
+                                    <option key={s} value={s}>
+                                      {s}
+                                    </option>
+                                  ))}
+                                </select>
+                                <select
+                                  value={bnr.kategori}
+                                  onChange={(e) =>
+                                    handleUpdateSatkerBanner(bnr.id, {
+                                      kategori: e.target.value as SatkerBannerCategory,
+                                    })
+                                  }
+                                  className="px-2.5 py-1.5 rounded bg-[#021b15] border border-emerald-700 text-xs text-white"
+                                >
+                                  <option value="Spanduk & Banner Ucapan">
+                                    Spanduk & Banner Ucapan
+                                  </option>
+                                  <option value="Persiapan Lomba">Persiapan Lomba</option>
+                                  <option value="Baksos">Baksos</option>
+                                  <option value="Kunjungan Kerja">Kunjungan Kerja</option>
+                                  <option value="Upacara & Seremonial">Upacara & Seremonial</option>
+                                </select>
+                                <input
+                                  type="text"
+                                  value={bnr.judul}
+                                  onChange={(e) =>
+                                    handleUpdateSatkerBanner(bnr.id, { judul: e.target.value })
+                                  }
+                                  placeholder="Judul Spanduk / Foto"
+                                  className="sm:col-span-2 px-2.5 py-1.5 rounded bg-[#021b15] border border-emerald-700 text-xs text-white"
+                                />
+                                <div className="sm:col-span-2 flex gap-1.5">
+                                  <input
+                                    type="text"
+                                    value={
+                                      bnr.imageUrl.startsWith('data:')
+                                        ? 'Gambar Terkompresi Tersimpan'
+                                        : bnr.imageUrl
+                                    }
+                                    onChange={(e) =>
+                                      handleUpdateSatkerBanner(bnr.id, {
+                                        imageUrl: normalizeBannerImageUrl(e.target.value),
+                                      })
+                                    }
+                                    placeholder="Link URL Gambar Spanduk"
+                                    className="flex-1 px-2.5 py-1.5 rounded bg-[#021b15] border border-emerald-700 text-xs text-amber-300 font-mono-tabular"
+                                  />
+                                  <label className="px-2.5 py-1.5 rounded bg-emerald-800 hover:bg-emerald-700 text-emerald-100 text-[11px] font-semibold flex items-center gap-1 cursor-pointer shrink-0">
+                                    <Upload className="w-3.5 h-3.5" />
+                                    <span>Ganti File</span>
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      onChange={async (e) => {
+                                        const file = e.target.files?.[0];
+                                        if (!file) return;
+                                        const { dataUrl } = await compressBannerImageFile(
+                                          file,
+                                          1280,
+                                          0.78
+                                        );
+                                        handleUpdateSatkerBanner(bnr.id, { imageUrl: dataUrl });
+                                        notify('Gambar spanduk berhasil diperbarui.');
+                                        e.target.value = '';
+                                      }}
+                                      className="hidden"
+                                    />
+                                  </label>
+                                </div>
+                                <input
+                                  type="text"
+                                  value={bnr.bannerUcapan || ''}
+                                  onChange={(e) =>
+                                    handleUpdateSatkerBanner(bnr.id, {
+                                      bannerUcapan: e.target.value || undefined,
+                                    })
+                                  }
+                                  placeholder="Teks bannerUcapan Satker (Opsional)"
+                                  className="sm:col-span-2 px-2.5 py-1.5 rounded bg-[#021b15] border border-emerald-700 text-xs text-white"
+                                />
+                                <input
+                                  type="text"
+                                  value={bnr.keterangan || ''}
+                                  onChange={(e) =>
+                                    handleUpdateSatkerBanner(bnr.id, {
+                                      keterangan: e.target.value || undefined,
+                                    })
+                                  }
+                                  placeholder="Keterangan Kegiatan (Opsional)"
+                                  className="sm:col-span-4 px-2.5 py-1.5 rounded bg-[#021b15] border border-emerald-700 text-xs text-slate-200"
+                                />
+                              </div>
+                            )}
                           </div>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                onUpdateState((prev) => ({
-                                  ...prev,
-                                  messages: prev.messages.map((x) =>
-                                    x.id === m.id ? { ...x, disetujui: !x.disetujui } : x
-                                  ),
-                                }))
-                              }
-                              className={`px-2 py-1 rounded text-[11px] font-semibold cursor-pointer ${
-                                m.disetujui
-                                  ? 'bg-emerald-800 text-emerald-200'
-                                  : 'bg-slate-800 text-slate-400'
-                              }`}
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Coupons & Harmony Messages */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div className="bg-[#021b15] border border-emerald-800 rounded-xl p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-sm font-bold text-amber-300">
+                          Data Kupon QR Jalan Sehat ({appState.coupons.length})
+                        </h3>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onUpdateState((prev) => ({
+                              ...prev,
+                              coupons: prev.coupons.map((c) => ({
+                                ...c,
+                                sudahMenang: false,
+                                hadiahDimenangkan: undefined,
+                              })),
+                            }));
+                            notify('Status pemenang undian kupon berhasil direset.');
+                          }}
+                          className="text-xs text-emerald-300 underline cursor-pointer"
+                        >
+                          Reset Status Pemenang
+                        </button>
+                      </div>
+                      <div className="space-y-1.5 max-h-80 overflow-y-auto pr-1">
+                        {appState.coupons.map((c) => {
+                          const isEditing = editingCouponId === c.id;
+                          return (
+                            <div
+                              key={c.id}
+                              className="bg-[#03251c] px-3 py-2 rounded-lg text-xs space-y-2"
                             >
-                              {m.disetujui ? 'Tampil' : 'Tersembunyi'}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                onUpdateState((prev) => ({
-                                  ...prev,
-                                  messages: prev.messages.filter((x) => x.id !== m.id),
-                                }))
-                              }
-                              className="p-1 rounded bg-rose-950 text-rose-300 cursor-pointer"
+                              <div className="flex items-center justify-between gap-2">
+                                <div>
+                                  <span className="font-mono-tabular text-amber-300 font-bold mr-2">
+                                    {c.nomorKupon}
+                                  </span>
+                                  <strong className="text-white">{c.namaPeserta}</strong> ({c.satkerAtauUmum})
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingCouponId(isEditing ? null : c.id)}
+                                    className="text-amber-300 hover:text-amber-200 cursor-pointer"
+                                  >
+                                    {isEditing ? 'Tutup' : 'Edit'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      onUpdateState((prev) => ({
+                                        ...prev,
+                                        coupons: prev.coupons.filter((x) => x.id !== c.id),
+                                      }))
+                                    }
+                                    className="text-rose-400 hover:text-rose-300 cursor-pointer"
+                                  >
+                                    Hapus
+                                  </button>
+                                </div>
+                              </div>
+
+                              {isEditing && (
+                                <div className="space-y-2 pt-2 border-t border-emerald-800/70">
+                                  <div className="flex items-center justify-between text-[11px] text-emerald-300 bg-[#021b15] px-2.5 py-1 rounded border border-emerald-800">
+                                    <span>Nomor Undian & Barcode QR (Terkunci Permanen):</span>
+                                    <strong className="font-mono-tabular text-amber-300">
+                                      {c.nomorKupon}
+                                    </strong>
+                                  </div>
+                                  <div className="grid grid-cols-2 gap-1.5">
+                                    <input
+                                      type="text"
+                                      value={c.namaPeserta}
+                                      onChange={(e) =>
+                                        onUpdateState((prev) => ({
+                                          ...prev,
+                                          coupons: prev.coupons.map((item) =>
+                                            item.id === c.id
+                                              ? { ...item, namaPeserta: e.target.value }
+                                              : item
+                                          ),
+                                        }))
+                                      }
+                                      placeholder="Nama Peserta"
+                                      className="px-2 py-1 rounded bg-[#021b15] border border-emerald-700 text-xs text-white"
+                                    />
+                                    <input
+                                      type="text"
+                                      value={c.satkerAtauUmum}
+                                      onChange={(e) =>
+                                        onUpdateState((prev) => ({
+                                          ...prev,
+                                          coupons: prev.coupons.map((item) =>
+                                            item.id === c.id
+                                              ? { ...item, satkerAtauUmum: e.target.value }
+                                              : item
+                                          ),
+                                        }))
+                                      }
+                                      placeholder="Satker / Umum"
+                                      className="px-2 py-1 rounded bg-[#021b15] border border-emerald-700 text-xs text-white"
+                                    />
+                                    <input
+                                      type="text"
+                                      value={c.nikAtauNip}
+                                      onChange={(e) =>
+                                        onUpdateState((prev) => ({
+                                          ...prev,
+                                          coupons: prev.coupons.map((item) =>
+                                            item.id === c.id
+                                              ? { ...item, nikAtauNip: e.target.value }
+                                              : item
+                                          ),
+                                        }))
+                                      }
+                                      placeholder="NIP / NIK"
+                                      className="px-2 py-1 rounded bg-[#021b15] border border-emerald-700 text-xs text-white font-mono-tabular"
+                                    />
+                                    <input
+                                      type="text"
+                                      value={c.noHp}
+                                      onChange={(e) =>
+                                        onUpdateState((prev) => ({
+                                          ...prev,
+                                          coupons: prev.coupons.map((item) =>
+                                            item.id === c.id
+                                              ? { ...item, noHp: e.target.value }
+                                              : item
+                                          ),
+                                        }))
+                                      }
+                                      placeholder="No. HP / WA"
+                                      className="px-2 py-1 rounded bg-[#021b15] border border-emerald-700 text-xs text-white font-mono-tabular"
+                                    />
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="bg-[#021b15] border border-emerald-800 rounded-xl p-4 space-y-3">
+                      <h3 className="text-sm font-bold text-amber-300">
+                        Moderasi Ucapan & Kotak Aspirasi ({appState.messages.length})
+                      </h3>
+                      <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                        {appState.messages.map((m) => {
+                          const isEditing = editingMsgId === m.id;
+                          return (
+                            <div
+                              key={m.id}
+                              className="bg-[#03251c] p-3 rounded-lg text-xs space-y-2"
                             >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <div className="font-bold text-white">
+                                    {m.nama} <span className="text-amber-300">({m.kategori})</span>
+                                  </div>
+                                  <p className="text-slate-300 mt-0.5">{m.pesan}</p>
+                                </div>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      onUpdateState((prev) => ({
+                                        ...prev,
+                                        messages: prev.messages.map((x) =>
+                                          x.id === m.id ? { ...x, disetujui: !x.disetujui } : x
+                                        ),
+                                      }))
+                                    }
+                                    className={`px-2 py-1 rounded text-[11px] font-semibold cursor-pointer ${
+                                      m.disetujui
+                                        ? 'bg-emerald-800 text-emerald-200'
+                                        : 'bg-slate-800 text-slate-400'
+                                    }`}
+                                  >
+                                    {m.disetujui ? 'Tampil' : 'Tersembunyi'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingMsgId(isEditing ? null : m.id)}
+                                    className="px-2 py-1 rounded bg-[#021b15] border border-emerald-700 text-amber-300 text-[11px] cursor-pointer"
+                                  >
+                                    {isEditing ? 'Tutup' : 'Edit'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      onUpdateState((prev) => ({
+                                        ...prev,
+                                        messages: prev.messages.filter((x) => x.id !== m.id),
+                                      }))
+                                    }
+                                    className="p-1 rounded bg-rose-950 text-rose-300 cursor-pointer"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+
+                              {isEditing && (
+                                <div className="pt-1.5 border-t border-emerald-800/70 space-y-1.5">
+                                  <input
+                                    type="text"
+                                    value={m.nama}
+                                    onChange={(e) =>
+                                      onUpdateState((prev) => ({
+                                        ...prev,
+                                        messages: prev.messages.map((x) =>
+                                          x.id === m.id ? { ...x, nama: e.target.value } : x
+                                        ),
+                                      }))
+                                    }
+                                    className="w-full px-2 py-1 rounded bg-[#021b15] border border-emerald-700 text-xs text-white"
+                                  />
+                                  <textarea
+                                    rows={2}
+                                    value={m.pesan}
+                                    onChange={(e) =>
+                                      onUpdateState((prev) => ({
+                                        ...prev,
+                                        messages: prev.messages.map((x) =>
+                                          x.id === m.id ? { ...x, pesan: e.target.value } : x
+                                        ),
+                                      }))
+                                    }
+                                    className="w-full px-2 py-1 rounded bg-[#021b15] border border-emerald-700 text-xs text-slate-200"
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1534,10 +3171,198 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                       </div>
                     </div>
 
-                    {/* Running Text Ticker CRUD */}
+                    {/* Pengaturan Kode PIN Rahasia Admin */}
+                    <div className="pt-2 border-t border-emerald-800/70 flex flex-wrap items-center justify-between gap-3">
+                      <label className="text-xs font-semibold text-amber-300">
+                        Kode PIN Rahasia Otorisasi Admin:
+                      </label>
+                      <input
+                        type="password"
+                        value={appState.branding.adminPin}
+                        onChange={(e) =>
+                          onUpdateState((prev) => ({
+                            ...prev,
+                            branding: {
+                              ...prev.branding,
+                              adminPin: e.target.value,
+                            },
+                          }))
+                        }
+                        placeholder="Ubah PIN Admin"
+                        className="px-3 py-1.5 rounded-lg bg-[#03251c] border border-emerald-700 text-xs text-white font-mono-tabular w-44"
+                      />
+                    </div>
+
+                    {/* 4. Pengaturan Suara Sambutan Pengunjung (2 Fitur: Ketik Teks & Link GitHub/Drive + On/Off & Hapus) */}
+                    {(() => {
+                      const voiceCfg = appState.branding.welcomeVoice || {
+                        enabled: true,
+                        mode: 'tts' as const,
+                        welcomeText:
+                          'Selamat datang di Portal Resmi Peringatan Hari Amal Bakti ke-81 Kementerian Agama Republik Indonesia, Kantor Kementerian Agama Kabupaten Tojo Una-Una Tahun 2027. Umat Rukun dan Sinergi, Indonesia Damai dan Maju.',
+                        audioUrl: '',
+                      };
+                      const updateVoice = (partial: Partial<typeof voiceCfg>) => {
+                        onUpdateState((prev) => ({
+                          ...prev,
+                          branding: {
+                            ...prev.branding,
+                            welcomeVoice: {
+                              ...voiceCfg,
+                              ...partial,
+                            },
+                          },
+                        }));
+                      };
+                      return (
+                        <div className="bg-[#03251c]/80 border border-amber-400/50 rounded-xl p-4 space-y-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <div className="text-xs font-bold text-amber-300">
+                                4. Suara Sambutan Pengunjung (Welcome Voice / Audio)
+                              </div>
+                              <p className="text-[11px] text-slate-300">
+                                Menyapa pengunjung secara otomatis saat membuka situs (Sangat ringan & tidak membebani situs).
+                              </p>
+                            </div>
+                            {/* Tombol ON / OFF */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const nextState = !voiceCfg.enabled;
+                                updateVoice({ enabled: nextState });
+                                notify(
+                                  nextState
+                                    ? 'Suara Sambutan Pengunjung: AKTIF (ON)'
+                                    : 'Suara Sambutan Pengunjung: NONAKTIF (OFF)'
+                                );
+                              }}
+                              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition-colors ${
+                                voiceCfg.enabled
+                                  ? 'bg-emerald-700 hover:bg-emerald-600 text-white border border-amber-400/60'
+                                  : 'bg-rose-950 hover:bg-rose-900 text-rose-200 border border-rose-500/50'
+                              }`}
+                            >
+                              {voiceCfg.enabled ? 'Status: ON (Aktif)' : 'Status: OFF (Nonaktif)'}
+                            </button>
+                          </div>
+
+                          {/* Pilihan 2 Mode: 1. Ketik Teks vs 2. Link GitHub / Google Drive */}
+                          <div className="flex flex-wrap items-center gap-2 pt-1">
+                            <button
+                              type="button"
+                              onClick={() => updateVoice({ mode: 'tts' })}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer ${
+                                voiceCfg.mode === 'tts'
+                                  ? 'bg-amber-400 text-slate-950'
+                                  : 'bg-[#021b15] text-slate-300 hover:text-white border border-emerald-800'
+                              }`}
+                            >
+                              1. Ketik Teks Sambutan (Suara Otomatis 0 KB)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => updateVoice({ mode: 'audio_url' })}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer ${
+                                voiceCfg.mode === 'audio_url'
+                                  ? 'bg-amber-400 text-slate-950'
+                                  : 'bg-[#021b15] text-slate-300 hover:text-white border border-emerald-800'
+                              }`}
+                            >
+                              2. Tempel Link Audio GitHub / Google Drive (.MP3)
+                            </button>
+                          </div>
+
+                          {voiceCfg.mode === 'tts' ? (
+                            <div className="space-y-2">
+                              <label className="block text-[11px] text-slate-300">
+                                Ketik Kalimat Sambutan Bahasa Indonesia:
+                              </label>
+                              <textarea
+                                rows={3}
+                                value={voiceCfg.welcomeText}
+                                onChange={(e) => updateVoice({ welcomeText: e.target.value })}
+                                placeholder="Ketik kalimat sambutan resmi HAB ke-81 Kemenag Tojo Una-Una..."
+                                className="w-full px-3 py-2 rounded-lg bg-[#021b15] border border-emerald-700 text-xs text-white leading-relaxed"
+                              />
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (
+                                      typeof window !== 'undefined' &&
+                                      'speechSynthesis' in window &&
+                                      voiceCfg.welcomeText.trim()
+                                    ) {
+                                      window.speechSynthesis.cancel();
+                                      const u = new SpeechSynthesisUtterance(
+                                        voiceCfg.welcomeText.trim()
+                                      );
+                                      u.lang = 'id-ID';
+                                      u.rate = 0.98;
+                                      window.speechSynthesis.speak(u);
+                                      notify('Memutar pratinjau suara sambutan teks...');
+                                    }
+                                  }}
+                                  className="px-3 py-1.5 rounded-lg bg-emerald-800 hover:bg-emerald-700 text-amber-200 text-xs font-semibold cursor-pointer"
+                                >
+                                  Tes Putar Suara Teks
+                                </button>
+                                {voiceCfg.welcomeText && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      updateVoice({ welcomeText: '' });
+                                      notify('Teks suara sambutan berhasil dihapus.');
+                                    }}
+                                    className="px-3 py-1.5 rounded-lg bg-rose-950/90 hover:bg-rose-900 text-rose-300 text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                    <span>Hapus Teks Sambutan</span>
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="space-y-2">
+                              <label className="block text-[11px] text-slate-300">
+                                Tempel Link Audio (.MP3) dari GitHub atau Google Drive:
+                              </label>
+                              <input
+                                type="url"
+                                value={voiceCfg.audioUrl}
+                                onChange={(e) => updateVoice({ audioUrl: e.target.value })}
+                                placeholder="https://raw.githubusercontent.com/Irfan45372/HABKEMENAGTOUNA/main/sambutan.mp3 atau Link Google Drive"
+                                className="w-full px-3 py-2 rounded-lg bg-[#021b15] border border-emerald-700 text-xs text-amber-200 font-mono-tabular"
+                              />
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <span className="text-[11px] text-slate-400">
+                                  Mendukung link GitHub (raw/blob) & link berbagi Google Drive.
+                                </span>
+                                {voiceCfg.audioUrl && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      updateVoice({ audioUrl: '' });
+                                      notify('Link audio sambutan berhasil dihapus.');
+                                    }}
+                                    className="px-3 py-1.5 rounded-lg bg-rose-950/90 hover:bg-rose-900 text-rose-300 text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                    <span>Hapus Link Audio</span>
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+
+                    {/* Running Text Ticker CRUD (Add, Inline Edit & Delete) */}
                     <div className="pt-3 border-t border-emerald-800 space-y-2">
                       <label className="block text-xs font-bold text-amber-300">
-                        Running Text Pengumuman Penting (Top Ticker)
+                        Running Text Pengumuman Penting (Top Ticker) — Tambah, Edit & Hapus
                       </label>
                       <div className="flex gap-2">
                         <input
@@ -1569,13 +3394,28 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                           + Tambah
                         </button>
                       </div>
-                      <div className="space-y-1.5 max-h-32 overflow-y-auto">
+                      <div className="space-y-1.5 max-h-36 overflow-y-auto">
                         {appState.branding.runningTextItems.map((item, idx) => (
                           <div
                             key={idx}
-                            className="bg-[#03251c] px-3 py-1.5 rounded text-xs flex items-center justify-between gap-2"
+                            className="bg-[#03251c] px-2.5 py-1.5 rounded text-xs flex items-center justify-between gap-2"
                           >
-                            <span className="truncate text-slate-200">{item}</span>
+                            <input
+                              type="text"
+                              value={item}
+                              onChange={(e) =>
+                                onUpdateState((prev) => ({
+                                  ...prev,
+                                  branding: {
+                                    ...prev.branding,
+                                    runningTextItems: prev.branding.runningTextItems.map(
+                                      (txt, i) => (i === idx ? e.target.value : txt)
+                                    ),
+                                  },
+                                }))
+                              }
+                              className="flex-1 px-2 py-1 rounded bg-[#021b15] border border-emerald-800 text-xs text-slate-200"
+                            />
                             <button
                               type="button"
                               onClick={() =>
@@ -1589,7 +3429,7 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                                   },
                                 }))
                               }
-                              className="text-rose-400 shrink-0 cursor-pointer"
+                              className="text-rose-400 shrink-0 cursor-pointer px-1.5"
                             >
                               Hapus
                             </button>
@@ -1602,16 +3442,67 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                   {/* GitHub JSON Export / Import & Factory Reset */}
                   <div className="lg:col-span-5 bg-[#021b15] border border-emerald-800 rounded-xl p-5 flex flex-col justify-between space-y-5">
                     <div className="space-y-3">
-                      <h3 className="text-sm font-bold text-amber-300 flex items-center gap-2">
+                      {/* Live Firebase Cloud Database Status Card */}
+                      <div className="bg-[#03251c] border border-amber-400/50 rounded-xl p-3.5 space-y-2.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                            <Cloud className="w-4 h-4" />
+                            <span>Database Firebase Cloud ({ADMIN_EMAIL})</span>
+                          </span>
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              firebaseConnected
+                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                : 'bg-amber-500/20 text-amber-300'
+                            }`}
+                          >
+                            {firebaseConnected ? 'ONLINE · REAL-TIME' : 'MENGHUBUNGKAN...'}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-300 leading-relaxed">
+                          Semua pendaftaran lomba, kupon jalan sehat, kiriman spanduk/foto Satker, video YouTube, ucapan, dan perubahan Admin <strong>otomatis tersimpan ke Cloud Firestore</strong> secara <em>real-time</em> di semua perangkat tanpa perlu push ulang ke GitHub.
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            disabled={isSyncingCloud}
+                            onClick={async () => {
+                              setIsSyncingCloud(true);
+                              await syncFullStateToCloud(appState);
+                              setIsSyncingCloud(false);
+                              notify('Seluruh data berhasil disinkronkan ke Firebase Cloud Database!');
+                            }}
+                            className="flex-1 py-2 px-3 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                          >
+                            <Cloud className="w-3.5 h-3.5" />
+                            <span>
+                              {isSyncingCloud
+                                ? 'Menyinkronkan ke Cloud...'
+                                : 'Sinkronkan Paksa ke Firebase Cloud'}
+                            </span>
+                          </button>
+                          {currentUser && (
+                            <button
+                              type="button"
+                              onClick={() => void signOutFirebase()}
+                              className="py-2 px-3 rounded-lg bg-emerald-950 hover:bg-emerald-900 border border-emerald-700 text-slate-300 text-[11px] font-semibold cursor-pointer"
+                            >
+                              Logout ({currentUser.email})
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <h3 className="text-sm font-bold text-amber-300 flex items-center gap-2 pt-1">
                         <ShieldCheck className="w-4 h-4" />
-                        Sinkronisasi Live GitHub (Irfan45372/HABKEMENAGTOUNA)
+                        Cadangan JSON & GitHub (Irfan45372/HABKEMENAGTOUNA)
                       </h3>
                       <p className="text-xs text-slate-300 leading-relaxed">
-                        Ekspor seluruh database dinamis menjadi file{' '}
+                        Opsional: Anda tetap dapat mengunduh cadangan file{' '}
                         <code className="text-amber-300 font-mono-tabular">
                           hab81-kemenag-touna-2027-state.json
                         </code>{' '}
-                        dan simpan di folder utama (root) repositori GitHub agar seluruh pengunjung website otomatis mendapatkan pembaruan terbaru Anda.
+                        kapan saja sebagai arsip lokal atau cadangan di repositori GitHub.
                       </p>
 
                       <button
@@ -1620,7 +3511,7 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                         className="w-full py-2.5 px-4 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs flex items-center justify-center gap-2 cursor-pointer shadow-md"
                       >
                         <Download className="w-4 h-4" />
-                        <span>1. Unduh File hab81-kemenag-touna-2027-state.json</span>
+                        <span>1. Unduh Cadangan hab81-kemenag-touna-2027-state.json</span>
                       </button>
 
                       <button
@@ -1651,39 +3542,6 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                           className="hidden"
                         />
                       </label>
-
-                      <div className="bg-[#03251c] border border-emerald-800/80 rounded-lg p-3 space-y-1.5 text-[11px] text-slate-300">
-                        <div className="font-bold text-amber-300">
-                          Cara Live Otomatis di GitHub Pages:
-                        </div>
-                        <ol className="list-decimal list-inside space-y-1">
-                          <li>
-                            Ekspor / Push kode proyek ini ke repo{' '}
-                            <a
-                              href="https://github.com/Irfan45372/HABKEMENAGTOUNA"
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-amber-300 underline"
-                            >
-                              Irfan45372/HABKEMENAGTOUNA
-                            </a>{' '}
-                            (branch <code className="text-white">main</code>).
-                          </li>
-                          <li>
-                            Di GitHub, buka <strong>Settings → Pages</strong>, lalu pada bagian{' '}
-                            <strong>Build and deployment (Source)</strong> pilih{' '}
-                            <strong className="text-emerald-300">GitHub Actions</strong>.
-                          </li>
-                          <li>
-                            File workflow <code className="text-white">.github/workflows/deploy.yml</code>{' '}
-                            otomatis mem-build & menayangkan web di{' '}
-                            <span className="text-amber-300 font-mono-tabular">
-                              https://irfan45372.github.io/HABKEMENAGTOUNA/
-                            </span>
-                            .
-                          </li>
-                        </ol>
-                      </div>
                     </div>
 
                     <div className="pt-4 border-t border-emerald-800 space-y-2">
@@ -1710,8 +3568,10 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
             {/* Bottom Modal Footer */}
             <div className="px-6 py-3 bg-[#021b15] border-t border-emerald-800 flex items-center justify-between text-xs text-slate-400 shrink-0">
               <span className="flex items-center gap-1.5 text-emerald-300">
-                <Check className="w-3.5 h-3.5" />
-                Auto-Persistence Aktif (localStorage)
+                <Cloud className="w-3.5 h-3.5 text-amber-300" />
+                {firebaseConnected
+                  ? `Firebase Cloud Sync Aktif (${ADMIN_EMAIL}) + Backup localStorage`
+                  : 'Auto-Persistence Aktif (localStorage)'}
               </span>
               <span>Pintasan Keyboard: Ctrl + Shift + A</span>
             </div>

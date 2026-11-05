@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   calculateCountdown,
   createRegistrationRecord,
+  extractYoutubeEmbedUrl,
   generateJalanSehatTicketNumber,
   generateQrMatrix,
   getRequiredPlayerSlots,
@@ -12,6 +13,22 @@ import {
   validateRegistrationInput,
 } from './habLogic';
 import { Competition, JalanSehatCoupon, MedalStanding } from '../types/hab';
+
+test('extractYoutubeEmbedUrl parses standard watch, short, shorts, and live URLs', () => {
+  assert.equal(
+    extractYoutubeEmbedUrl('https://www.youtube.com/watch?v=dQw4w9WgXcQ'),
+    'https://www.youtube.com/embed/dQw4w9WgXcQ'
+  );
+  assert.equal(
+    extractYoutubeEmbedUrl('https://youtu.be/dQw4w9WgXcQ?si=123'),
+    'https://www.youtube.com/embed/dQw4w9WgXcQ'
+  );
+  assert.equal(
+    extractYoutubeEmbedUrl('https://www.youtube.com/shorts/dQw4w9WgXcQ'),
+    'https://www.youtube.com/embed/dQw4w9WgXcQ'
+  );
+  assert.equal(extractYoutubeEmbedUrl('https://example.com/video.mp4'), null);
+});
 
 test('calculateCountdown accurately computes days, hours, minutes, seconds', () => {
   const target = '2027-01-03T07:30:00+08:00';
