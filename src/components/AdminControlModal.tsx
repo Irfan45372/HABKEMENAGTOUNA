@@ -461,9 +461,7 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
               <h3 className="text-xl font-bold text-white">
                 Otorisasi Panitia HAB ke-81 Kemenag Touna
               </h3>
-              <p className="text-xs text-slate-300">
-                Masukkan PIN Panitia untuk mengelola Cabang Lomba, Jadwal Acara, Pin Peta 3D, Satker, serta Logo Resmi HAB ke-81. (PIN Default: <strong className="text-amber-300 font-mono-tabular"></strong>)
-              </p>
+              
             </div>
 
             {pinError && (
@@ -478,7 +476,7 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                 aria-label="PIN Admin Panitia"
                 value={pinInput}
                 onChange={(e) => setPinInput(e.target.value)}
-                placeholder=""Masukkan PIN Rahasia""
+                placeholder="Masukkan PIN Rahasia"
                 className="px-4 py-2.5 rounded-lg bg-[#021b15] border border-emerald-700 text-sm text-white font-mono-tabular text-center focus:outline-none focus:border-amber-400"
               />
               <button
