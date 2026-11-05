@@ -12,6 +12,7 @@ import {
   sortMedalStandings,
   validateRegistrationInput,
 } from '../utils/habLogic';
+import { downloadRegistrationsPdfReport } from '../utils/pdfReportGenerator';
 import {
   Award,
   CheckCircle2,
@@ -830,6 +831,24 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
                   <option value="custom-proposal">Usulan Cabang Baru</option>
                 </select>
               </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const label =
+                    dirCompFilter === 'ALL'
+                      ? 'Semua Cabang Lomba'
+                      : dirCompFilter === 'custom-proposal'
+                      ? 'Usulan Cabang Baru'
+                      : competitions.find((c) => c.id === dirCompFilter)?.nama || 'Cabang Terpilih';
+                  void downloadRegistrationsPdfReport(filteredRegistrations, undefined, label);
+                }}
+                className="px-3.5 py-2 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-sm"
+                title="Unduh Laporan Resmi Daftar Peserta Lomba ke Format PDF"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Unduh Laporan PDF ({filteredRegistrations.length})</span>
+              </button>
             </div>
           </div>
 

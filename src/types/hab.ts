@@ -145,6 +145,7 @@ export interface NavLabelsConfig {
   lomba: string;
   jadwal: string;
   kupon: string;
+  jurnal?: string;
 }
 
 export interface WelcomeVoiceConfig {
@@ -217,6 +218,20 @@ export interface SatkerBannerItem {
   disetujui: boolean;
 }
 
+export interface JournalArticle {
+  id: string;
+  judul: string;
+  kategoriLokasi: string; // Contoh: "TOJO UNA UNA"
+  penulis: string; // Contoh: "H. Sam Asiku" / "Tim Humas Kemenag Touna"
+  satker: string;
+  tanggalWaktu: string; // Contoh: "Kamis, 05 November 2026 - 14:54 WITA"
+  leadParagraf: string; // Paragraf pembuka cetak tebal-miring
+  isiBerita: string; // Isi berita lengkap multi-paragraf (dipisahkan baris baru)
+  photos: string[]; // Array 1 s/d 4 foto (photos[0] = Foto Utama yang tampil saat share WA)
+  captionFotoUtama?: string;
+  disetujui: boolean;
+}
+
 export interface AppState {
   branding: BrandingConfig;
   competitions: Competition[];
@@ -231,5 +246,7 @@ export interface AppState {
   messages: HarmonyMessage[];
   videos?: VideoItem[];
   satkerBanners?: SatkerBannerItem[];
+  journals?: JournalArticle[];
 }
+
 

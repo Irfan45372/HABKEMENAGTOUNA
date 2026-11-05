@@ -28,6 +28,7 @@ import {
   Cloud,
   Download,
   Edit3,
+  FileText,
   Lock,
   Plus,
   RotateCcw,
@@ -46,6 +47,10 @@ import {
   syncFullStateToCloud,
   User,
 } from '../firebase';
+import {
+  downloadJalanSehatPdfReport,
+  downloadRegistrationsPdfReport,
+} from '../utils/pdfReportGenerator';
 
 interface AdminControlModalProps {
   isOpen: boolean;
@@ -53,6 +58,9 @@ interface AdminControlModalProps {
   appState: AppState;
   firebaseConnected?: boolean;
   currentUser?: User | null;
+  isAdminUnlocked?: boolean;
+  onUnlockAdmin?: () => void;
+  onLockAdmin?: () => void;
   onClose: () => void;
   onUpdateState: (updater: (prev: AppState) => AppState) => void;
   onResetDefault: () => void;
@@ -65,12 +73,15 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
   appState,
   firebaseConnected = false,
   currentUser = null,
+  isAdminUnlocked = false,
+  onUnlockAdmin,
+  onLockAdmin,
   onClose,
   onUpdateState,
   onResetDefault,
   onActivateInlineEdit,
 }) => {
-  const [isUnlocked, setIsUnlocked] = useState<boolean>(false);
+  const [isUnlocked, setIsUnlocked] = useState<boolean>(isAdminUnlocked);
   const [pinInput, setPinInput] = useState<string>('');
   const [pinError, setPinError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<number>(initialTab);
@@ -82,10 +93,8 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
   }, [initialTab, isOpen]);
 
   useEffect(() => {
-    if (currentUser?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
-      setIsUnlocked(true);
-    }
-  }, [currentUser]);
+    setIsUnlocked(isAdminUnlocked);
+  }, [isAdminUnlocked]);
 
   // Tab 1: New Competition State
   const [newCompNama, setNewCompNama] = useState('');
@@ -149,6 +158,7 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
   const [editingSatkerIdx, setEditingSatkerIdx] = useState<number | null>(null);
   const [editingSatkerValue, setEditingSatkerValue] = useState<string>('');
   const [editingRegId, setEditingRegId] = useState<string | null>(null);
+  const [regPdfFilter, setRegPdfFilter] = useState<string>('ALL');
 
   // Tab 4: Video & YouTube State
   const [newVidJudul, setNewVidJudul] = useState('');
@@ -188,6 +198,7 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
     const expectedPin = appState.branding.adminPin || '812027';
     if (pinInput.trim() === expectedPin) {
       setIsUnlocked(true);
+      onUnlockAdmin?.();
       setPinError(null);
     } else {
       setPinError('Kode PIN Otorisasi tidak sesuai. Akses khusus Panitia Resmi HAB ke-81.');
@@ -752,6 +763,21 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
               >
                 <Edit3 className="w-3.5 h-3.5" />
                 <span>Edit Teks Langsung di Halaman</span>
+              </button>
+            )}
+            {isUnlocked && (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsUnlocked(false);
+                  setPinInput('');
+                  onLockAdmin?.();
+                }}
+                className="px-3 py-1.5 rounded-lg bg-rose-950/90 hover:bg-rose-900 border border-rose-500/50 text-rose-200 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                title="Kunci Kembali Mode Admin (Sembunyikan Fitur Admin & Tombol Suara)"
+              >
+                <Lock className="w-3.5 h-3.5" />
+                <span>Kunci Mode Admin</span>
               </button>
             )}
             <button
@@ -1987,11 +2013,55 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Registered Teams Management (Edit & Delete) */}
+                  {/* Registered Teams Management (Edit, Delete & Official PDF Report) */}
                   <div className="lg:col-span-7 bg-[#021b15] border border-emerald-800 rounded-xl p-4 space-y-4">
-                    <h3 className="text-sm font-bold text-amber-300">
-                      Data Kontingen & Peserta Lomba Terdaftar ({appState.registrations.length})
-                    </h3>
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-emerald-800/80 pb-3">
+                      <h3 className="text-sm font-bold text-amber-300">
+                        Data Kontingen & Peserta Lomba Terdaftar ({appState.registrations.length})
+                      </h3>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <select
+                          aria-label="Filter Cabang Lomba untuk Laporan PDF"
+                          value={regPdfFilter}
+                          onChange={(e) => setRegPdfFilter(e.target.value)}
+                          className="px-2.5 py-1.5 rounded-lg bg-[#03251c] border border-emerald-700 text-xs text-white"
+                        >
+                          <option value="ALL">Semua Cabang Lomba ({appState.registrations.length})</option>
+                          {appState.competitions.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.nama}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const filtered =
+                              regPdfFilter === 'ALL'
+                                ? appState.registrations
+                                : appState.registrations.filter(
+                                    (r) => r.competitionId === regPdfFilter
+                                  );
+                            const label =
+                              regPdfFilter === 'ALL'
+                                ? 'Semua Cabang Lomba'
+                                : appState.competitions.find((c) => c.id === regPdfFilter)?.nama ||
+                                  'Cabang Terpilih';
+                            await downloadRegistrationsPdfReport(
+                              filtered,
+                              appState.branding,
+                              label
+                            );
+                            notify(`Laporan PDF Peserta Lomba (${label}) berhasil diunduh!`);
+                          }}
+                          className="px-3.5 py-1.5 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-sm"
+                        >
+                          <FileText className="w-3.5 h-3.5" />
+                          <span>Unduh Laporan Peserta (.PDF)</span>
+                        </button>
+                      </div>
+                    </div>
                     <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
                       {appState.registrations.map((reg) => {
                         const isEditing = editingRegId === reg.id;
@@ -2606,7 +2676,7 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                   {/* Coupons & Harmony Messages */}
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <div className="bg-[#021b15] border border-emerald-800 rounded-xl p-4 space-y-3">
-                      <div className="flex items-center justify-between">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
                         <h3 className="text-sm font-bold text-amber-300">
                           Data Kupon QR Jalan Sehat ({appState.coupons.length})
                         </h3>
@@ -2628,6 +2698,43 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                           Reset Status Pemenang
                         </button>
                       </div>
+
+                      {/* Official PDF Report Buttons for Jalan Sehat Winners & All Coupons */}
+                      <div className="flex flex-wrap items-center gap-2 bg-[#03251c] border border-amber-400/40 rounded-lg p-2.5">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            await downloadJalanSehatPdfReport(
+                              appState.coupons,
+                              appState.branding,
+                              'winners_only'
+                            );
+                            notify('Laporan PDF Pemenang Doorprize Jalan Sehat berhasil diunduh!');
+                          }}
+                          className="flex-1 py-2 px-3 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                        >
+                          <FileText className="w-3.5 h-3.5" />
+                          <span>
+                            Unduh PDF Pemenang ({appState.coupons.filter((c) => c.sudahMenang).length})
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            await downloadJalanSehatPdfReport(
+                              appState.coupons,
+                              appState.branding,
+                              'all_coupons'
+                            );
+                            notify('Laporan PDF Seluruh Peserta Kupon Jalan Sehat berhasil diunduh!');
+                          }}
+                          className="flex-1 py-2 px-3 rounded-lg bg-emerald-800 hover:bg-emerald-700 border border-emerald-600 text-white font-semibold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          <Download className="w-3.5 h-3.5 text-amber-300" />
+                          <span>Unduh PDF Semua Kupon ({appState.coupons.length})</span>
+                        </button>
+                      </div>
+
                       <div className="space-y-1.5 max-h-80 overflow-y-auto pr-1">
                         {appState.coupons.map((c) => {
                           const isEditing = editingCouponId === c.id;

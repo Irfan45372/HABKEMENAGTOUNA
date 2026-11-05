@@ -16,6 +16,7 @@ import {
   CheckCircle2,
   Download,
   Edit3,
+  FileText,
   Gift,
   Lock,
   QrCode,
@@ -30,6 +31,7 @@ import {
   X,
   XCircle,
 } from 'lucide-react';
+import { downloadJalanSehatPdfReport } from '../utils/pdfReportGenerator';
 
 interface JalanSehatTwibbonSectionProps {
   branding: BrandingConfig;
@@ -1559,8 +1561,21 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
 
               {/* Drawn Winners (Removed from Active Draw Pool) */}
               <div className="space-y-2">
-                <div className="text-xs font-semibold text-amber-300">
-                  Sudah Diundi / Keluar dari Antrean ({winnersList.length}):
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-xs font-semibold text-amber-300">
+                    Sudah Diundi / Pemenang ({winnersList.length}):
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void downloadJalanSehatPdfReport(coupons, branding, 'winners_only')
+                    }
+                    className="px-2.5 py-1 rounded-md bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-[11px] flex items-center gap-1 cursor-pointer shadow-sm"
+                    title="Unduh Laporan Resmi Pemenang Doorprize Jalan Sehat (.PDF)"
+                  >
+                    <FileText className="w-3 h-3" />
+                    <span>Unduh PDF Pemenang</span>
+                  </button>
                 </div>
                 <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
                   {winnersList.length === 0 ? (

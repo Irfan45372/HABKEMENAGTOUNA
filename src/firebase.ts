@@ -23,6 +23,7 @@ import {
   AppState,
   HarmonyMessage,
   JalanSehatCoupon,
+  JournalArticle,
   ParticipantRegistration,
   SatkerBannerItem,
   VideoItem,
@@ -240,6 +241,24 @@ export async function deleteSatkerBannerFromCloud(id: string): Promise<void> {
   }
 }
 
+export async function saveJournalToCloud(journal: JournalArticle): Promise<void> {
+  const path = `journals/${journal.id}`;
+  try {
+    await setDoc(doc(db, 'journals', journal.id), stripUndefined(journal));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function deleteJournalFromCloud(id: string): Promise<void> {
+  const path = `journals/${id}`;
+  try {
+    await deleteDoc(doc(db, 'journals', id));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
 /**
  * Seeds Firestore when portalConfig/main does not exist yet.
  */
@@ -261,6 +280,9 @@ export async function seedInitialStateToCloud(state: AppState): Promise<void> {
     }
     for (const banner of state.satkerBanners || []) {
       batch.set(doc(db, 'satkerBanners', banner.id), stripUndefined(banner));
+    }
+    for (const journal of state.journals || []) {
+      batch.set(doc(db, 'journals', journal.id), stripUndefined(journal));
     }
     await batch.commit();
   } catch (error) {
@@ -312,6 +334,7 @@ export async function syncFullStateToCloud(newState: AppState, prevState?: AppSt
       syncCollection('messages', newState.messages || [], prevState?.messages),
       syncCollection('videos', newState.videos || [], prevState?.videos),
       syncCollection('satkerBanners', newState.satkerBanners || [], prevState?.satkerBanners),
+      syncCollection('journals', newState.journals || [], prevState?.journals),
     ]);
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, 'syncFullStateToCloud');

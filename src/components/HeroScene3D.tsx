@@ -6,6 +6,7 @@ import { calculateCountdown, CountdownParts } from '../utils/habLogic';
 import {
   drawFallbackKemenagCrestOnCanvas,
   drawProceduralHab81OnCanvas,
+  ensureWhiteRibbonKemenagCanvas,
   Hab81LogoBadge,
   KemenagLogoImg,
   loadAnonymousImage,
@@ -99,10 +100,11 @@ function buildMedallionFrontCanvas(kemenagImg: HTMLImageElement | null): HTMLCan
   ctx.lineWidth = 3;
   ctx.stroke();
 
-  // Center Logo
+  // Center Logo (with guaranteed white ribbon background for IKHLAS BERAMAL)
   if (kemenagImg) {
+    const cleanLogoCanvas = ensureWhiteRibbonKemenagCanvas(kemenagImg);
     const size = 216;
-    ctx.drawImage(kemenagImg, cx - size / 2, cy - size / 2 - 8, size, size);
+    ctx.drawImage(cleanLogoCanvas, cx - size / 2, cy - size / 2 - 8, size, size);
   } else {
     drawFallbackKemenagCrestOnCanvas(ctx, cx, cy - 6, 115);
   }
@@ -386,19 +388,21 @@ export const HeroScene3D: React.FC<HeroScene3DProps> = ({
     const frontFaceMat = new THREE.MeshStandardMaterial({
       color: 0xffffff,
       map: frontTexture,
-      metalness: 0.22,
-      roughness: 0.32,
+      metalness: 0.08,
+      roughness: 0.42,
       bumpMap: bumpTex,
-      bumpScale: 0.008,
+      bumpScale: 0.006,
+      fog: false,
     });
 
     const backFaceMat = new THREE.MeshStandardMaterial({
       color: 0xffffff,
       map: backTexture,
-      metalness: 0.22,
-      roughness: 0.32,
+      metalness: 0.08,
+      roughness: 0.42,
       bumpMap: bumpTex,
-      bumpScale: 0.008,
+      bumpScale: 0.006,
+      fog: false,
     });
 
     // Expose callback to update textures when Admin changes logos
@@ -876,6 +880,9 @@ export const HeroScene3D: React.FC<HeroScene3DProps> = ({
                 <p className="text-lg sm:text-xl font-semibold text-amber-300 tracking-wide [text-wrap:balance]">
                   {branding.officialSubtitle}
                 </p>
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-emerald-950/90 border border-amber-400/40 text-xs font-bold tracking-wider text-amber-300 uppercase">
+                  <span>by HUMAS KEMENTERIAN AGAMA KABUPATEN TOJO UNA UNA</span>
+                </div>
                 <p className="text-sm sm:text-base text-slate-300 leading-relaxed max-w-xl">
                   “{branding.officialTagline}”
                 </p>

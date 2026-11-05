@@ -24,15 +24,12 @@
       "properties": {
         "id": { "type": "string" },
         "competitionId": { "type": "string" },
-        "namaLomba": { "type": "string" },
+        "competitionName": { "type": "string" },
         "satker": { "type": "string" },
-        "formatKepesertaan": { "type": "string" },
-        "namaPesertaAtauTim": { "type": "string" },
-        "daftarAnggota": { "type": "string" },
-        "kontakWa": { "type": "string" },
+        "namaTimAtauPeserta": { "type": "string" },
         "waktuDaftar": { "type": "string" }
       },
-      "required": ["id", "competitionId", "namaLomba", "satker", "namaPesertaAtauTim", "waktuDaftar"]
+      "required": ["id", "competitionId", "competitionName", "satker", "namaTimAtauPeserta"]
     },
     "JalanSehatCoupon": {
       "title": "JalanSehatCoupon",
@@ -45,11 +42,11 @@
         "satkerAtauUmum": { "type": "string" },
         "nikAtauNip": { "type": "string" },
         "noHp": { "type": "string" },
-        "waktuCetak": { "type": "string" },
+        "waktuRegistrasi": { "type": "string" },
         "sudahMenang": { "type": "boolean" },
         "hadiahDimenangkan": { "type": "string" }
       },
-      "required": ["id", "nomorKupon", "namaPeserta", "satkerAtauUmum", "waktuCetak"]
+      "required": ["id", "nomorKupon", "namaPeserta", "satkerAtauUmum"]
     },
     "HarmonyMessage": {
       "title": "HarmonyMessage",
@@ -57,12 +54,12 @@
       "type": "object",
       "properties": {
         "id": { "type": "string" },
-        "namaPengirim": { "type": "string" },
-        "satker": { "type": "string" },
-        "isiPesan": { "type": "string" },
+        "nama": { "type": "string" },
+        "jabatanAtauSatker": { "type": "string" },
+        "pesan": { "type": "string" },
         "waktu": { "type": "string" }
       },
-      "required": ["id", "namaPengirim", "satker", "isiPesan", "waktu"]
+      "required": ["id", "nama", "pesan"]
     },
     "VideoItem": {
       "title": "VideoItem",
@@ -71,14 +68,10 @@
       "properties": {
         "id": { "type": "string" },
         "judul": { "type": "string" },
-        "kategori": { "type": "string" },
         "satker": { "type": "string" },
-        "youtubeUrl": { "type": "string" },
-        "embedUrl": { "type": "string" },
-        "deskripsi": { "type": "string" },
-        "tanggal": { "type": "string" }
+        "youtubeUrl": { "type": "string" }
       },
-      "required": ["id", "judul", "satker", "youtubeUrl", "embedUrl"]
+      "required": ["id", "judul", "satker"]
     },
     "SatkerBannerItem": {
       "title": "SatkerBannerItem",
@@ -89,12 +82,28 @@
         "judul": { "type": "string" },
         "satker": { "type": "string" },
         "kategori": { "type": "string" },
-        "imageUrl": { "type": "string" },
-        "bannerUcapan": { "type": "string" },
-        "deskripsi": { "type": "string" },
-        "tanggal": { "type": "string" }
+        "imageUrl": { "type": "string" }
       },
       "required": ["id", "judul", "satker", "kategori", "imageUrl"]
+    },
+    "JournalArticle": {
+      "title": "JournalArticle",
+      "description": "Editorial news/journal article with 1 to 4 photos for HAB ke-81 Kemenag Tojo Una-Una.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "judul": { "type": "string" },
+        "kategoriLokasi": { "type": "string" },
+        "penulis": { "type": "string" },
+        "satker": { "type": "string" },
+        "tanggalWaktu": { "type": "string" },
+        "leadParagraf": { "type": "string" },
+        "isiBerita": { "type": "string" },
+        "photos": { "type": "array" },
+        "captionFotoUtama": { "type": "string" },
+        "disetujui": { "type": "boolean" }
+      },
+      "required": ["id", "judul", "penulis", "photos"]
     }
   },
   "firestore": {
@@ -121,6 +130,10 @@
     "/satkerBanners/{bannerId}": {
       "schema": { "$ref": "#/entities/SatkerBannerItem" },
       "description": "Stores Satker banners, greeting spanduk, and activity photos."
+    },
+    "/journals/{journalId}": {
+      "schema": { "$ref": "#/entities/JournalArticle" },
+      "description": "Stores official journal and news articles with 1 to 4 photos."
     }
   }
 }

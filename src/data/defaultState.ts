@@ -12,6 +12,7 @@ export const DEFAULT_APP_STATE: AppState = {
       lomba: 'Pendaftaran Lomba',
       jadwal: 'Jadwal & Baksos',
       kupon: 'Kupon Jalan Sehat',
+      jurnal: 'Jurnal & Berita',
     },
     heroEyebrow: 'Kemenag RI · Kab. Tojo Una-Una',
     kemenagLogoPrimaryUrl:
@@ -813,6 +814,52 @@ export const DEFAULT_APP_STATE: AppState = {
         'Kontingen KUA Kepulauan siap menyukseskan seluruh rangkaian HAB ke-81 Kemenag Tojo Una-Una!',
       keterangan: 'Kunjungan kerja pembinaan ASN dan koordinasi pemberangkatan kontingen kepulauan.',
       waktuUpload: '19 Nov 2026',
+      disetujui: true,
+    },
+  ],
+  journals: [
+    {
+      id: 'jrn-seed-1',
+      judul:
+        'Kemenag Tojo Una-Una Matangkan Persiapan HAB ke-81 Tahun 2027, Usung Semangat “Kemenag Berdampak”',
+      kategoriLokasi: 'TOJO UNA UNA',
+      penulis: 'Tim Humas Kemenag Tojo Una-Una',
+      satker: 'Kantor Kemenag Kab. Tojo Una-Una (Induk)',
+      tanggalWaktu: 'Kamis, 05 November 2026 - 14:54 WITA',
+      leadParagraf:
+        'HUMAS, TOJO UNA UNA – Kantor Kementerian Agama (Kemenag) Kabupaten Tojo Una-Una mulai bergerak cepat mematangkan persiapan pelaksanaan Hari Amal Bakti (HAB) Kemenag ke-81 Tahun 2027. Langkah awal ini ditandai dengan digelarnya rapat koordinasi jajaran pejabat dan satuan kerja di Ruang Rapat Kantor Kemenag Tojo Una-Una.',
+      isiBerita:
+        'Rapat strategis tersebut dipimpin langsung oleh Kepala Kantor Kemenag Tojo Una-Una bersama Kasubbag Tata Usaha, para Kepala Seksi dan Penyelenggara, Kepala Madrasah Negeri, Kepala KUA Kecamatan daratan maupun kepulauan, Pengawas Madrasah, serta Jabatan Fungsional Tertentu (JFT) di lingkungan Kemenag Tojo Una-Una.\n\nDalam arahannya, pimpinan menegaskan bahwa peringatan Hari Amal Bakti ke-81 Tahun 2027 harus mengusung semangat “Kemenag Berdampak” yang tidak hanya meriah melalui ajang Pekan Olahraga dan Seni (Porseni) antar-Satker, tetapi juga menghadirkan manfaat nyata bagi masyarakat luas melalui program Bakti Sosial lintas agama, layanan sertifikasi halal gratis, donor darah ASN, serta santunan yatim dan dhuafa.\n\nSeluruh satuan kerja baik di wilayah daratan Ampana maupun wilayah kepulauan Togean dan Walea berkomitmen penuh menyukseskan agenda tahunan ini sebagai momentum memperkokoh kerukunan umat beragama dan meningkatkan kualitas layanan publik di Kabupaten Tojo Una-Una.',
+      photos: [
+        `data:image/svg+xml;utf8,${encodeURIComponent(
+          `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675">
+            <defs>
+              <linearGradient id="jbg1" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#064e3b"/>
+                <stop offset="50%" stop-color="#042f24"/>
+                <stop offset="100%" stop-color="#021b15"/>
+              </linearGradient>
+            </defs>
+            <rect width="1200" height="675" fill="url(#jbg1)"/>
+            <rect x="36" y="36" width="1128" height="603" rx="20" fill="none" stroke="#fbbf24" stroke-width="3" stroke-opacity="0.6"/>
+            <text x="600" y="210" text-anchor="middle" fill="#fbbf24" font-family="sans-serif" font-weight="800" font-size="26" letter-spacing="2">JURNAL RESMI HUMAS KEMENAG TOJO UNA-UNA</text>
+            <text x="600" y="300" text-anchor="middle" fill="#ffffff" font-family="Georgia, serif" font-weight="800" font-size="44">RAPAT KOORDINASI PERSIAPAN HAB KE-81</text>
+            <text x="600" y="365" text-anchor="middle" fill="#a7f3d0" font-family="sans-serif" font-weight="700" font-size="30">Mengusung Semangat “Kemenag Berdampak” Tahun 2027</text>
+            <text x="600" y="450" text-anchor="middle" fill="#fde68a" font-family="sans-serif" font-weight="600" font-size="22">Kantor Kementerian Agama Kabupaten Tojo Una-Una · Ampana</text>
+          </svg>`
+        )}`,
+        `data:image/svg+xml;utf8,${encodeURIComponent(
+          `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675">
+            <rect width="1200" height="675" fill="#03251c"/>
+            <rect x="36" y="36" width="1128" height="603" rx="20" fill="none" stroke="#34d399" stroke-width="2" stroke-opacity="0.5"/>
+            <text x="600" y="260" text-anchor="middle" fill="#fde68a" font-family="sans-serif" font-weight="700" font-size="28">DOKUMENTASI KEGIATAN #2</text>
+            <text x="600" y="340" text-anchor="middle" fill="#ffffff" font-family="sans-serif" font-weight="800" font-size="38">SINERGI JAJARAN PEJABAT, KEPALA KUA &amp; MADRASAH</text>
+            <text x="600" y="410" text-anchor="middle" fill="#a7f3d0" font-family="sans-serif" font-size="24">Pembentukan Panitia Pelaksana HAB ke-81 Kemenag Tojo Una-Una</text>
+          </svg>`
+        )}`,
+      ],
+      captionFotoUtama:
+        'Suasana rapat pematangan persiapan Hari Amal Bakti (HAB) ke-81 Kementerian Agama Kabupaten Tojo Una-Una.',
       disetujui: true,
     },
   ],

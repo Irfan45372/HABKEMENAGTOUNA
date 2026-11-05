@@ -1,11 +1,14 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { WelcomeVoiceConfig } from '../types/hab';
 import { normalizeAudioUrl } from '../utils/habLogic';
-import { Settings, Volume2, VolumeX } from 'lucide-react';
+import { Lock, Settings, Volume2, VolumeX } from 'lucide-react';
 
 interface WelcomeVoicePlayerProps {
   config?: WelcomeVoiceConfig;
+  isAdminUnlocked?: boolean;
+  menuTapTrigger?: number;
   onOpenAdminSettings?: () => void;
+  onLockAdmin?: () => void;
 }
 
 const DEFAULT_VOICE_CONFIG: WelcomeVoiceConfig = {
@@ -18,12 +21,41 @@ const DEFAULT_VOICE_CONFIG: WelcomeVoiceConfig = {
 
 export const WelcomeVoicePlayer: React.FC<WelcomeVoicePlayerProps> = ({
   config,
+  isAdminUnlocked = false,
+  menuTapTrigger = 0,
   onOpenAdminSettings,
+  onLockAdmin,
 }) => {
   const voiceConfig = config || DEFAULT_VOICE_CONFIG;
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const hasAutoPlayedRef = useRef<boolean>(false);
+  const isAttemptingPlayRef = useRef<boolean>(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  // Keep reference to utterance so Android Chrome GC does not collect it mid-speech
+  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const voicesRef = useRef<SpeechSynthesisVoice[]>([]);
+
+  // Preload voices on Android & desktop browsers
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+
+    const loadVoices = () => {
+      try {
+        const list = window.speechSynthesis.getVoices();
+        if (list && list.length > 0) {
+          voicesRef.current = list;
+        }
+      } catch {
+        // Ignore
+      }
+    };
+
+    loadVoices();
+    window.speechSynthesis.addEventListener?.('voiceschanged', loadVoices);
+    return () => {
+      window.speechSynthesis.removeEventListener?.('voiceschanged', loadVoices);
+    };
+  }, []);
 
   const stopPlayback = useCallback(() => {
     try {
@@ -37,78 +69,152 @@ export const WelcomeVoicePlayer: React.FC<WelcomeVoicePlayerProps> = ({
     } catch {
       // Ignore audio stop errors
     }
+    utteranceRef.current = null;
+    isAttemptingPlayRef.current = false;
     setIsPlaying(false);
   }, []);
 
-  const speakText = useCallback((text: string) => {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
-    const cleanText = text.trim();
-    if (!cleanText) return;
+  const speakText = useCallback(
+    (text: string, markAutoPlayedOnStart = true) => {
+      if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+      const cleanText = text.trim();
+      if (!cleanText) return;
 
-    try {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(cleanText);
-      utterance.lang = 'id-ID';
-      utterance.rate = 0.98;
-      utterance.pitch = 1.0;
+      try {
+        // On Android Chrome, calling cancel() unconditionally right before speak()
+        // can abort the newly queued utterance. Only cancel if actively speaking.
+        if (window.speechSynthesis.speaking) {
+          window.speechSynthesis.cancel();
+        }
 
-      const voices = window.speechSynthesis.getVoices();
-      const indoVoice = voices.find(
-        (v) =>
-          v.lang.toLowerCase().includes('id-id') ||
-          v.lang.toLowerCase().includes('id_') ||
-          v.name.toLowerCase().includes('indonesia')
-      );
-      if (indoVoice) {
-        utterance.voice = indoVoice;
+        const utterance = new SpeechSynthesisUtterance(cleanText);
+        utteranceRef.current = utterance;
+        utterance.lang = 'id-ID';
+        utterance.rate = 0.98;
+        utterance.pitch = 1.0;
+        utterance.volume = 1.0;
+
+        const availableVoices =
+          voicesRef.current.length > 0
+            ? voicesRef.current
+            : window.speechSynthesis.getVoices();
+
+        const indoVoice = availableVoices.find(
+          (v) =>
+            v.lang.toLowerCase().includes('id-id') ||
+            v.lang.toLowerCase().includes('id_') ||
+            v.lang.toLowerCase() === 'id' ||
+            v.name.toLowerCase().includes('indonesia')
+        );
+        if (indoVoice) {
+          utterance.voice = indoVoice;
+        }
+
+        utterance.onstart = () => {
+          if (markAutoPlayedOnStart) {
+            hasAutoPlayedRef.current = true;
+          }
+          isAttemptingPlayRef.current = false;
+          setIsPlaying(true);
+        };
+        utterance.onend = () => {
+          utteranceRef.current = null;
+          isAttemptingPlayRef.current = false;
+          setIsPlaying(false);
+        };
+        utterance.onerror = () => {
+          utteranceRef.current = null;
+          isAttemptingPlayRef.current = false;
+          setIsPlaying(false);
+        };
+
+        window.speechSynthesis.speak(utterance);
+        // Android Chrome sometimes pauses speechSynthesis engine until resume() is called
+        if (window.speechSynthesis.paused) {
+          window.speechSynthesis.resume();
+        }
+      } catch {
+        isAttemptingPlayRef.current = false;
+        setIsPlaying(false);
+      }
+    },
+    []
+  );
+
+  const startPlayback = useCallback(
+    (isManualButton = false) => {
+      if (!voiceConfig.enabled) return;
+
+      if (isManualButton) {
+        stopPlayback();
+        hasAutoPlayedRef.current = true;
+      } else if (isAttemptingPlayRef.current || isPlaying) {
+        return;
       }
 
-      utterance.onstart = () => setIsPlaying(true);
-      utterance.onend = () => setIsPlaying(false);
-      utterance.onerror = () => setIsPlaying(false);
+      isAttemptingPlayRef.current = true;
 
-      window.speechSynthesis.speak(utterance);
-    } catch {
-      setIsPlaying(false);
-    }
-  }, []);
-
-  const startPlayback = useCallback(() => {
-    if (!voiceConfig.enabled) return;
-
-    stopPlayback();
-
-    if (voiceConfig.mode === 'audio_url' && voiceConfig.audioUrl.trim()) {
-      const streamUrl = normalizeAudioUrl(voiceConfig.audioUrl);
-      if (streamUrl) {
-        try {
-          const audio = new Audio(streamUrl);
-          audioRef.current = audio;
-          audio.onplay = () => setIsPlaying(true);
-          audio.onended = () => setIsPlaying(false);
-          audio.onerror = () => {
-            setIsPlaying(false);
-            // Fallback to welcomeText if audio URL cannot be loaded
-            if (voiceConfig.welcomeText.trim()) {
-              speakText(voiceConfig.welcomeText);
+      if (voiceConfig.mode === 'audio_url' && voiceConfig.audioUrl.trim()) {
+        const streamUrl = normalizeAudioUrl(voiceConfig.audioUrl);
+        if (streamUrl) {
+          try {
+            if (audioRef.current) {
+              audioRef.current.pause();
             }
-          };
-          audio.play().catch(() => {
+            const audio = new Audio(streamUrl);
+            audio.preload = 'auto';
+            audioRef.current = audio;
+            audio.onplay = () => {
+              hasAutoPlayedRef.current = true;
+              isAttemptingPlayRef.current = false;
+              setIsPlaying(true);
+            };
+            audio.onended = () => {
+              isAttemptingPlayRef.current = false;
+              setIsPlaying(false);
+            };
+            audio.onerror = () => {
+              isAttemptingPlayRef.current = false;
+              setIsPlaying(false);
+              // Fallback to welcomeText if audio URL cannot be loaded
+              if (voiceConfig.welcomeText.trim()) {
+                speakText(voiceConfig.welcomeText, true);
+              }
+            };
+            const playPromise = audio.play();
+            if (playPromise !== undefined) {
+              playPromise
+                .then(() => {
+                  hasAutoPlayedRef.current = true;
+                  isAttemptingPlayRef.current = false;
+                  setIsPlaying(true);
+                })
+                .catch(() => {
+                  // If blocked on this gesture, allow next tap/click to retry
+                  isAttemptingPlayRef.current = false;
+                  setIsPlaying(false);
+                });
+            }
+            return;
+          } catch {
+            isAttemptingPlayRef.current = false;
             setIsPlaying(false);
-          });
-          return;
-        } catch {
-          setIsPlaying(false);
+          }
         }
       }
-    }
 
-    if (voiceConfig.welcomeText.trim()) {
-      speakText(voiceConfig.welcomeText);
-    }
-  }, [voiceConfig, stopPlayback, speakText]);
+      if (voiceConfig.welcomeText.trim()) {
+        speakText(voiceConfig.welcomeText, true);
+      } else {
+        isAttemptingPlayRef.current = false;
+      }
+    },
+    [voiceConfig, isPlaying, stopPlayback, speakText]
+  );
 
-  // Trigger welcome voice once on first visitor interaction
+  // Trigger welcome voice on Android/Desktop user activation gestures (click, touchend, pointerup, keydown)
+  // Note: We intentionally DO NOT listen to 'touchstart' because Android Chrome does not grant
+  // user activation on 'touchstart' (only on 'touchend' / 'pointerup' / 'click').
   useEffect(() => {
     if (!voiceConfig.enabled) {
       stopPlayback();
@@ -118,27 +224,53 @@ export const WelcomeVoicePlayer: React.FC<WelcomeVoicePlayerProps> = ({
     const hasContent =
       (voiceConfig.mode === 'audio_url' && Boolean(voiceConfig.audioUrl.trim())) ||
       Boolean(voiceConfig.welcomeText.trim());
-    if (!hasContent || hasAutoPlayedRef.current) return;
+    if (!hasContent) return;
 
-    const handleFirstInteraction = () => {
+    const handleUserActivationGesture = () => {
       if (hasAutoPlayedRef.current) return;
-      hasAutoPlayedRef.current = true;
-      startPlayback();
-      window.removeEventListener('click', handleFirstInteraction);
-      window.removeEventListener('touchstart', handleFirstInteraction);
-      window.removeEventListener('keydown', handleFirstInteraction);
+      startPlayback(false);
     };
 
-    window.addEventListener('click', handleFirstInteraction, { passive: true });
-    window.addEventListener('touchstart', handleFirstInteraction, { passive: true });
-    window.addEventListener('keydown', handleFirstInteraction, { passive: true });
+    // Capture phase (true) ensures we catch taps on any menu/button even if stopPropagation() is called
+    window.addEventListener('click', handleUserActivationGesture, {
+      capture: true,
+      passive: true,
+    });
+    window.addEventListener('touchend', handleUserActivationGesture, {
+      capture: true,
+      passive: true,
+    });
+    window.addEventListener('pointerup', handleUserActivationGesture, {
+      capture: true,
+      passive: true,
+    });
+    window.addEventListener('keydown', handleUserActivationGesture, {
+      capture: true,
+      passive: true,
+    });
 
     return () => {
-      window.removeEventListener('click', handleFirstInteraction);
-      window.removeEventListener('touchstart', handleFirstInteraction);
-      window.removeEventListener('keydown', handleFirstInteraction);
+      window.removeEventListener('click', handleUserActivationGesture, {
+        capture: true,
+      });
+      window.removeEventListener('touchend', handleUserActivationGesture, {
+        capture: true,
+      });
+      window.removeEventListener('pointerup', handleUserActivationGesture, {
+        capture: true,
+      });
+      window.removeEventListener('keydown', handleUserActivationGesture, {
+        capture: true,
+      });
     };
   }, [voiceConfig, startPlayback, stopPlayback]);
+
+  // Also trigger if parent explicitly notifies a menu tap and voice hasn't played yet
+  useEffect(() => {
+    if (menuTapTrigger > 0 && voiceConfig.enabled && !hasAutoPlayedRef.current) {
+      startPlayback(false);
+    }
+  }, [menuTapTrigger, voiceConfig.enabled, startPlayback]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -146,6 +278,9 @@ export const WelcomeVoicePlayer: React.FC<WelcomeVoicePlayerProps> = ({
       stopPlayback();
     };
   }, [stopPlayback]);
+
+  // Tombol Suara Sambutan HANYA tampil saat Admin telah memasukkan PIN / masuk di Mode Admin
+  if (!isAdminUnlocked) return null;
 
   if (!voiceConfig.enabled) return null;
 
@@ -161,11 +296,10 @@ export const WelcomeVoicePlayer: React.FC<WelcomeVoicePlayerProps> = ({
         type="button"
         onClick={(e) => {
           e.stopPropagation();
-          hasAutoPlayedRef.current = true;
           if (isPlaying) {
             stopPlayback();
           } else {
-            startPlayback();
+            startPlayback(true);
           }
         }}
         className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
@@ -200,6 +334,21 @@ export const WelcomeVoicePlayer: React.FC<WelcomeVoicePlayerProps> = ({
           aria-label="Atur Suara Sambutan di Panel Admin"
         >
           <Settings className="w-3.5 h-3.5" />
+        </button>
+      )}
+
+      {onLockAdmin && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onLockAdmin();
+          }}
+          className="p-1.5 rounded-lg bg-rose-950/90 hover:bg-rose-900 text-rose-300 hover:text-white cursor-pointer"
+          title="Kunci Kembali Mode Admin (Sembunyikan Tombol Suara)"
+          aria-label="Kunci Kembali Mode Admin"
+        >
+          <Lock className="w-3.5 h-3.5" />
         </button>
       )}
     </div>

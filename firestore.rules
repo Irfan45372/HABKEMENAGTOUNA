@@ -16,40 +16,34 @@ service cloud.firestore {
     }
 
     function isValidRegistration(data) {
-      return data.keys().hasAll(['id', 'competitionId', 'namaLomba', 'satker', 'namaPesertaAtauTim', 'waktuDaftar']) &&
+      return data.keys().hasAll(['id', 'competitionId', 'competitionName', 'satker', 'namaTimAtauPeserta']) &&
         data.id is string && data.id.size() > 0 && data.id.size() <= 120 &&
         data.competitionId is string && data.competitionId.size() > 0 && data.competitionId.size() <= 120 &&
-        data.namaLomba is string && data.namaLomba.size() > 0 && data.namaLomba.size() <= 250 &&
+        data.competitionName is string && data.competitionName.size() > 0 && data.competitionName.size() <= 250 &&
         data.satker is string && data.satker.size() > 0 && data.satker.size() <= 200 &&
-        data.namaPesertaAtauTim is string && data.namaPesertaAtauTim.size() > 0 && data.namaPesertaAtauTim.size() <= 250 &&
-        data.waktuDaftar is string && data.waktuDaftar.size() <= 100;
+        data.namaTimAtauPeserta is string && data.namaTimAtauPeserta.size() > 0 && data.namaTimAtauPeserta.size() <= 250;
     }
 
     function isValidCoupon(data) {
-      return data.keys().hasAll(['id', 'nomorKupon', 'namaPeserta', 'satkerAtauUmum', 'waktuCetak']) &&
+      return data.keys().hasAll(['id', 'nomorKupon', 'namaPeserta', 'satkerAtauUmum']) &&
         data.id is string && data.id.size() > 0 && data.id.size() <= 120 &&
         data.nomorKupon is string && data.nomorKupon.size() > 0 && data.nomorKupon.size() <= 60 &&
         data.namaPeserta is string && data.namaPeserta.size() > 0 && data.namaPeserta.size() <= 200 &&
-        data.satkerAtauUmum is string && data.satkerAtauUmum.size() > 0 && data.satkerAtauUmum.size() <= 200 &&
-        data.waktuCetak is string && data.waktuCetak.size() <= 100;
+        data.satkerAtauUmum is string && data.satkerAtauUmum.size() > 0 && data.satkerAtauUmum.size() <= 200;
     }
 
     function isValidHarmonyMessage(data) {
-      return data.keys().hasAll(['id', 'namaPengirim', 'satker', 'isiPesan', 'waktu']) &&
+      return data.keys().hasAll(['id', 'nama', 'pesan']) &&
         data.id is string && data.id.size() > 0 && data.id.size() <= 120 &&
-        data.namaPengirim is string && data.namaPengirim.size() > 0 && data.namaPengirim.size() <= 150 &&
-        data.satker is string && data.satker.size() > 0 && data.satker.size() <= 200 &&
-        data.isiPesan is string && data.isiPesan.size() > 0 && data.isiPesan.size() <= 2000 &&
-        data.waktu is string && data.waktu.size() <= 100;
+        data.nama is string && data.nama.size() > 0 && data.nama.size() <= 150 &&
+        data.pesan is string && data.pesan.size() > 0 && data.pesan.size() <= 2000;
     }
 
     function isValidVideo(data) {
-      return data.keys().hasAll(['id', 'judul', 'satker', 'youtubeUrl', 'embedUrl']) &&
+      return data.keys().hasAll(['id', 'judul', 'satker']) &&
         data.id is string && data.id.size() > 0 && data.id.size() <= 120 &&
         data.judul is string && data.judul.size() > 0 && data.judul.size() <= 300 &&
-        data.satker is string && data.satker.size() > 0 && data.satker.size() <= 200 &&
-        data.youtubeUrl is string && data.youtubeUrl.size() > 0 && data.youtubeUrl.size() <= 1000 &&
-        data.embedUrl is string && data.embedUrl.size() > 0 && data.embedUrl.size() <= 1000;
+        data.satker is string && data.satker.size() > 0 && data.satker.size() <= 200;
     }
 
     function isValidSatkerBanner(data) {
@@ -59,6 +53,14 @@ service cloud.firestore {
         data.satker is string && data.satker.size() > 0 && data.satker.size() <= 200 &&
         data.kategori is string && data.kategori.size() > 0 && data.kategori.size() <= 120 &&
         data.imageUrl is string && data.imageUrl.size() > 0 && data.imageUrl.size() <= 900000;
+    }
+
+    function isValidJournal(data) {
+      return data.keys().hasAll(['id', 'judul', 'penulis', 'photos']) &&
+        data.id is string && data.id.size() > 0 && data.id.size() <= 120 &&
+        data.judul is string && data.judul.size() > 0 && data.judul.size() <= 400 &&
+        data.penulis is string && data.penulis.size() > 0 && data.penulis.size() <= 200 &&
+        data.photos is list && data.photos.size() >= 1 && data.photos.size() <= 4;
     }
 
     match /portalConfig/{docId} {
@@ -94,6 +96,12 @@ service cloud.firestore {
     match /satkerBanners/{bannerId} {
       allow read: if true;
       allow create, update: if isValidSatkerBanner(request.resource.data) || isAdminUser();
+      allow delete: if true;
+    }
+
+    match /journals/{journalId} {
+      allow read: if true;
+      allow create, update: if isValidJournal(request.resource.data) || isAdminUser();
       allow delete: if true;
     }
   }

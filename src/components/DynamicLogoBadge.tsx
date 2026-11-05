@@ -32,6 +32,109 @@ export function loadAnonymousImage(
 }
 
 /**
+ * Ensures any transparent interior regions inside the Kemenag pentagon shield
+ * (especially the "IKHLAS BERAMAL" ribbon, rehal book stand, and cotton blossoms)
+ * are filled with pure crisp white (#FFFFFF), while keeping the exterior transparent.
+ */
+export function ensureWhiteRibbonKemenagCanvas(img: HTMLImageElement): HTMLCanvasElement {
+  const w = img.naturalWidth || img.width || 500;
+  const h = img.naturalHeight || img.height || 500;
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d')!;
+  ctx.drawImage(img, 0, 0, w, h);
+
+  try {
+    const imgData = ctx.getImageData(0, 0, w, h);
+    const data = imgData.data;
+    const total = w * h;
+    const exterior = new Uint8Array(total);
+    const queue = new Int32Array(total);
+    let head = 0;
+    let tail = 0;
+
+    // Seed flood-fill from all 4 outer edges where alpha < 200
+    for (let x = 0; x < w; x++) {
+      if (data[(0 * w + x) * 4 + 3] < 200) {
+        exterior[x] = 1;
+        queue[tail++] = x;
+      }
+      const bIdx = (h - 1) * w + x;
+      if (data[bIdx * 4 + 3] < 200 && !exterior[bIdx]) {
+        exterior[bIdx] = 1;
+        queue[tail++] = bIdx;
+      }
+    }
+    for (let y = 0; y < h; y++) {
+      const lIdx = y * w;
+      if (data[lIdx * 4 + 3] < 200 && !exterior[lIdx]) {
+        exterior[lIdx] = 1;
+        queue[tail++] = lIdx;
+      }
+      const rIdx = y * w + (w - 1);
+      if (data[rIdx * 4 + 3] < 200 && !exterior[rIdx]) {
+        exterior[rIdx] = 1;
+        queue[tail++] = rIdx;
+      }
+    }
+
+    while (head < tail) {
+      const curr = queue[head++];
+      const cx = curr % w;
+      const cy = (curr / w) | 0;
+      if (cx > 0) {
+        const n = curr - 1;
+        if (!exterior[n] && data[n * 4 + 3] < 200) {
+          exterior[n] = 1;
+          queue[tail++] = n;
+        }
+      }
+      if (cx < w - 1) {
+        const n = curr + 1;
+        if (!exterior[n] && data[n * 4 + 3] < 200) {
+          exterior[n] = 1;
+          queue[tail++] = n;
+        }
+      }
+      if (cy > 0) {
+        const n = curr - w;
+        if (!exterior[n] && data[n * 4 + 3] < 200) {
+          exterior[n] = 1;
+          queue[tail++] = n;
+        }
+      }
+      if (cy < h - 1) {
+        const n = curr + w;
+        if (!exterior[n] && data[n * 4 + 3] < 200) {
+          exterior[n] = 1;
+          queue[tail++] = n;
+        }
+      }
+    }
+
+    // Composite all interior transparent/semi-transparent pixels over pure white (#FFFFFF)
+    for (let i = 0; i < total; i++) {
+      if (!exterior[i]) {
+        const idx = i * 4;
+        const a = data[idx + 3];
+        if (a < 255) {
+          data[idx] = Math.round((data[idx] * a + 255 * (255 - a)) / 255);
+          data[idx + 1] = Math.round((data[idx + 1] * a + 255 * (255 - a)) / 255);
+          data[idx + 2] = Math.round((data[idx + 2] * a + 255 * (255 - a)) / 255);
+          data[idx + 3] = 255;
+        }
+      }
+    }
+    ctx.putImageData(imgData, 0, 0);
+  } catch {
+    // Ignore CORS taint if any custom external domain blocks getImageData
+  }
+
+  return canvas;
+}
+
+/**
  * Procedural Canvas renderer for the Kemenag Crest when offline or before image texture finishes loading.
  */
 export function drawFallbackKemenagCrestOnCanvas(
@@ -74,10 +177,22 @@ export function drawFallbackKemenagCrestOnCanvas(
   ctx.lineWidth = Math.max(1.5, radius * 0.03);
   ctx.strokeRect(cx - radius * 0.28, cy - radius * 0.08, radius * 0.56, radius * 0.28);
 
-  // Ribbon motto
-  ctx.fillStyle = '#fbbf24';
-  ctx.font = `700 ${Math.max(8, Math.round(radius * 0.14))}px sans-serif`;
-  ctx.fillText('IKHLAS BERAMAL', cx, cy + radius * 0.42);
+  // White Ribbon Banner with Black "IKHLAS BERAMAL" Text
+  const ribW = radius * 0.92;
+  const ribH = radius * 0.22;
+  const ribX = cx - ribW / 2;
+  const ribY = cy + radius * 0.31;
+  ctx.fillStyle = '#ffffff';
+  ctx.strokeStyle = '#0f172a';
+  ctx.lineWidth = Math.max(1.5, radius * 0.025);
+  ctx.beginPath();
+  ctx.roundRect(ribX, ribY, ribW, ribH, radius * 0.05);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = '#000000';
+  ctx.font = `800 ${Math.max(8, Math.round(radius * 0.125))}px sans-serif`;
+  ctx.fillText('IKHLAS BERAMAL', cx, ribY + ribH / 2 + 1);
   ctx.restore();
 }
 
@@ -157,6 +272,28 @@ export const KemenagLogoImg: React.FC<KemenagLogoImgProps> = ({
   className = 'w-11 h-11',
 }) => {
   const [stage, setStage] = useState<'primary' | 'fallback' | 'svg'>('primary');
+  const [processedDataUrl, setProcessedDataUrl] = useState<string | null>(null);
+
+  const currentSrc =
+    stage === 'primary' ? branding.kemenagLogoPrimaryUrl : branding.kemenagLogoFallbackUrl;
+
+  React.useEffect(() => {
+    setProcessedDataUrl(null);
+    if (!currentSrc || stage === 'svg') return;
+    let active = true;
+    loadAnonymousImage(currentSrc).then((img) => {
+      if (!active || !img) return;
+      try {
+        const cleanCanvas = ensureWhiteRibbonKemenagCanvas(img);
+        setProcessedDataUrl(cleanCanvas.toDataURL('image/png'));
+      } catch {
+        // Fallback to raw image if canvas export fails
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [currentSrc, stage]);
 
   if (stage === 'svg' || (!branding.kemenagLogoPrimaryUrl && !branding.kemenagLogoFallbackUrl)) {
     return (
@@ -174,17 +311,15 @@ export const KemenagLogoImg: React.FC<KemenagLogoImgProps> = ({
           <circle cx="32" cy="22" r="5" fill="#fbbf24" />
           <rect x="19" y="30" width="26" height="14" rx="2" fill="#fef3c7" stroke="#064e3b" strokeWidth="1.5" />
           <line x1="32" y1="30" x2="32" y2="44" stroke="#064e3b" strokeWidth="1.5" />
+          <rect x="14" y="46" width="36" height="7" rx="2" fill="#ffffff" stroke="#0f172a" strokeWidth="1" />
         </svg>
       </div>
     );
   }
 
-  const currentSrc =
-    stage === 'primary' ? branding.kemenagLogoPrimaryUrl : branding.kemenagLogoFallbackUrl;
-
   return (
     <img
-      src={currentSrc}
+      src={processedDataUrl || currentSrc}
       alt="Logo Resmi Kementerian Agama Republik Indonesia"
       crossOrigin="anonymous"
       referrerPolicy="no-referrer"
