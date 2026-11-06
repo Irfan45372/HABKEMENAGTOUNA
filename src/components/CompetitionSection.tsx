@@ -13,9 +13,12 @@ import {
   validateRegistrationInput,
 } from '../utils/habLogic';
 import { downloadRegistrationsPdfReport } from '../utils/pdfReportGenerator';
+import { buildDeepLink, shareToWhatsAppWithFullImage } from '../utils/shareUtils';
 import {
   Award,
+  Check,
   CheckCircle2,
+  Copy,
   Download,
   Edit3,
   FileText,
@@ -23,6 +26,7 @@ import {
   Lock,
   Plus,
   Search,
+  Share2,
   Sparkles,
   Trash2,
   Trophy,
@@ -108,6 +112,7 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
   // Directory filters
   const [dirCompFilter, setDirCompFilter] = useState<string>('ALL');
   const [dirSearch, setDirSearch] = useState<string>('');
+  const [copiedCompId, setCopiedCompId] = useState<string | null>(null);
 
   // Sync when external preselectedCompetitionId changes (e.g. from 2.5D Map "Daftar" button)
   useEffect(() => {
@@ -120,6 +125,68 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
       }
     }
   }, [preselectedCompetitionId, competitions]);
+
+  // Check URL query parameter ?lomba=<id> or ?menu=lomba when opened from WhatsApp
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const lombaParam = params.get('lomba');
+      const menuParam = params.get('menu');
+      if (lombaParam && competitions.length > 0) {
+        const found = competitions.find((c) => c.id === lombaParam);
+        if (found) {
+          setIsCustomProposal(false);
+          setSelectedCompId(found.id);
+          setActiveSubTab('form');
+          if (params.get('juknis') === '1') {
+            setActiveJuknisComp(found);
+          }
+          const el = document.getElementById('pendaftaran-lomba');
+          if (el) el.scrollIntoView({ behavior: 'smooth' });
+        }
+      } else if (menuParam === 'lomba') {
+        const el = document.getElementById('pendaftaran-lomba');
+        if (el) el.scrollIntoView({ behavior: 'smooth' });
+      }
+    } catch {
+      // Ignore
+    }
+  }, [competitions]);
+
+  const handleCopyCompLink = async (comp: Competition, includeJuknis = false) => {
+    const link = buildDeepLink({
+      lomba: comp.id,
+      juknis: includeJuknis ? '1' : undefined,
+    });
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopiedCompId(comp.id);
+      window.setTimeout(() => setCopiedCompId(null), 3000);
+    } catch {
+      setCopiedCompId(comp.id);
+    }
+  };
+
+  const handleShareCompToWa = async (comp: Competition) => {
+    const link = buildDeepLink({ lomba: comp.id, juknis: '1' });
+    const waText =
+      `🏆 *PENDAFTARAN & JUKNIS LOMBA HAB KE-81 KEMENAG TOJO UNA-UNA*\n` +
+      `_${comp.nama}_\n\n` +
+      `• *Kategori:* ${comp.kategori}\n` +
+      `• *Format Peserta:* ${comp.jenisPeserta} (Maks. ${comp.kuotaPemain} Orang)\n` +
+      `• *Jadwal:* ${comp.jadwalRingkas}\n` +
+      `• *Status Pendaftaran:* ${comp.statusPendaftaran}\n` +
+      `• *Koordinator / PIC:* ${comp.koordinator}\n` +
+      (comp.catatan ? `\n📋 *Juknis Singkat:* ${comp.catatan}\n` : '') +
+      `\n🔗 *Buka Formulir Pendaftaran & Unduh Juknis Resmi:*\n${link}`;
+
+    await shareToWhatsAppWithFullImage({
+      title: `Lomba ${comp.nama} — HAB ke-81 Kemenag Touna`,
+      waText,
+      imageSrc: '/Kementerian-Agama.png',
+      fileName: `lomba-${comp.id}.jpg`,
+    });
+  };
 
   const selectedCompetition = useMemo(
     () => competitions.find((c) => c.id === selectedCompId) || null,
@@ -449,21 +516,56 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
                       <span>{comp.jadwalRingkas}</span>
                     </div>
 
-                    <div className="mt-2.5 pt-2 border-t border-emerald-800/50 flex items-center justify-between text-xs">
+                    <div className="mt-2.5 pt-2 border-t border-emerald-800/50 flex flex-wrap items-center justify-between gap-2 text-xs">
                       <span className="text-slate-400 truncate">
                         PIC: {comp.koordinator}
                       </span>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setActiveJuknisComp(comp);
-                        }}
-                        className="text-amber-300 hover:text-amber-200 underline underline-offset-4 font-medium inline-flex items-center gap-1 shrink-0 cursor-pointer"
-                      >
-                        <FileText className="w-3 h-3" />
-                        Lihat Juknis
-                      </button>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void handleShareCompToWa(comp);
+                          }}
+                          className="px-2 py-0.5 rounded bg-emerald-700 hover:bg-emerald-600 text-white text-[11px] font-semibold inline-flex items-center gap-1 cursor-pointer"
+                          title="Bagikan Info & Link Pendaftaran Lomba ke WhatsApp"
+                        >
+                          <Share2 className="w-3 h-3" />
+                          <span>WA</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void handleCopyCompLink(comp, false);
+                          }}
+                          className="px-2 py-0.5 rounded bg-[#03251c] hover:bg-emerald-900 border border-emerald-700 text-amber-300 text-[11px] font-semibold inline-flex items-center gap-1 cursor-pointer"
+                          title="Salin Link Pendaftaran Cabang Lomba ini"
+                        >
+                          {copiedCompId === comp.id ? (
+                            <>
+                              <Check className="w-3 h-3 text-emerald-400" />
+                              <span>Tersalin</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3 h-3" />
+                              <span>Link</span>
+                            </>
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveJuknisComp(comp);
+                          }}
+                          className="text-amber-300 hover:text-amber-200 underline underline-offset-4 font-medium inline-flex items-center gap-1 shrink-0 cursor-pointer"
+                        >
+                          <FileText className="w-3 h-3" />
+                          <span>Lihat Juknis</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );

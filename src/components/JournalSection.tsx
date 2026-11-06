@@ -187,11 +187,7 @@ export const JournalSection: React.FC<JournalSectionProps> = ({
   }, [activeArticle]);
 
   const getArticleShareUrl = (articleId: string): string => {
-    const base =
-      window.location.hostname.includes('github.io')
-        ? 'https://irfan45372.github.io/HABKEMENAGTOUNA/'
-        : `${window.location.origin}${window.location.pathname}`;
-    return `${base}?jurnal=${encodeURIComponent(articleId)}`;
+    return `https://irfan45372.github.io/HABKEMENAGTOUNA/?jurnal=${encodeURIComponent(articleId)}`;
   };
 
   const buildWhatsAppShareText = (article: JournalArticle): string => {

@@ -14,6 +14,7 @@ import {
   Camera,
   Check,
   CheckCircle2,
+  Copy,
   Download,
   Edit3,
   FileText,
@@ -22,6 +23,7 @@ import {
   QrCode,
   RefreshCw,
   Search,
+  Share2,
   ShieldCheck,
   Sparkles,
   Ticket,
@@ -32,6 +34,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { downloadJalanSehatPdfReport } from '../utils/pdfReportGenerator';
+import { buildDeepLink, shareToWhatsAppWithFullImage } from '../utils/shareUtils';
 
 interface JalanSehatTwibbonSectionProps {
   branding: BrandingConfig;
@@ -299,10 +302,7 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
       if (!ctx) return;
 
       // QR Code depends EXCLUSIVELY on activeCoupon.nomorKupon so editing name/NIP never changes the barcode!
-      const baseSiteUrl =
-        typeof window !== 'undefined'
-          ? `${window.location.origin}${window.location.pathname}`
-          : 'https://irfan45372.github.io/HABKEMENAGTOUNA/';
+      const baseSiteUrl = 'https://irfan45372.github.io/HABKEMENAGTOUNA/';
       const qrPayloadUrl = `${baseSiteUrl}?kupon=${encodeURIComponent(activeCoupon.nomorKupon)}#jalan-sehat`;
       const realQrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=210x210&margin=0&color=022c22&bgcolor=ffffff&data=${encodeURIComponent(
         qrPayloadUrl
@@ -632,6 +632,8 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
     setNoHp('');
   };
 
+  const [copiedCouponLink, setCopiedCouponLink] = useState<boolean>(false);
+
   const handleDownloadTicketPng = () => {
     const canvas = ticketCanvasRef.current;
     if (!canvas) return;
@@ -642,6 +644,35 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
     a.click();
   };
 
+  const handleCopyCouponLink = async () => {
+    const link = buildDeepLink({ kupon: activeCoupon.nomorKupon });
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopiedCouponLink(true);
+      window.setTimeout(() => setCopiedCouponLink(false), 3000);
+    } catch {
+      setCopiedCouponLink(true);
+    }
+  };
+
+  const handleShareCouponToWa = async () => {
+    const link = buildDeepLink({ kupon: activeCoupon.nomorKupon });
+    const waText =
+      `🎟️ *KUPON JALAN SEHAT KERUKUNAN HAB KE-81 KEMENAG TOJO UNA-UNA*\n\n` +
+      `• *Nomor Kupon:* ${activeCoupon.nomorKupon}\n` +
+      `• *Nama Peserta:* ${activeCoupon.namaPeserta}\n` +
+      `• *Utusan / Satker:* ${activeCoupon.satkerAtauUmum}\n` +
+      `• *Waktu Daftar:* ${activeCoupon.waktuRegistrasi}\n\n` +
+      `🔗 *Cek Keaslian & Status Undian Kupon:*\n${link}`;
+
+    await shareToWhatsAppWithFullImage({
+      title: `Kupon ${activeCoupon.nomorKupon} — ${activeCoupon.namaPeserta}`,
+      waText,
+      canvas: ticketCanvasRef.current,
+      fileName: `Kupon-${activeCoupon.nomorKupon}.jpg`,
+    });
+  };
+
   const handleDownloadTwibbonPng = () => {
     const canvas = twibbonCanvasRef.current;
     if (!canvas) return;
@@ -650,6 +681,22 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
     a.href = url;
     a.download = `Twibbon-HAB81-KemenagTouna.png`;
     a.click();
+  };
+
+  const handleShareTwibbonToWa = async () => {
+    const link = buildDeepLink({ menu: 'twibbon' });
+    const waText =
+      `✨ *TWIBBON RESMI HARI AMAL BAKTI KE-81 KEMENAG RI TAHUN 2027*\n` +
+      `_${twibbonName} — ${twibbonSatker}_\n\n` +
+      `"Umat Rukun dan Sinergi, Indonesia Damai dan Maju"\n\n` +
+      `🔗 *Buat Twibbon & Kupon Jalan Sehat HAB ke-81 Kemenag Tojo Una-Una:*\n${link}`;
+
+    await shareToWhatsAppWithFullImage({
+      title: `Twibbon HAB ke-81 — ${twibbonName}`,
+      waText,
+      canvas: twibbonCanvasRef.current,
+      fileName: 'Twibbon-HAB81-KemenagTouna.jpg',
+    });
   };
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -996,11 +1043,38 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
                 </button>
                 <button
                   type="button"
+                  onClick={handleShareCouponToWa}
+                  className="px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-sm"
+                  title="Bagikan Gambar Kupon Full + Link Verifikasi ke WhatsApp"
+                >
+                  <Share2 className="w-3.5 h-3.5" />
+                  <span>Bagikan WA (Full)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCopyCouponLink}
+                  className="px-3 py-2 rounded-lg bg-[#021b15] hover:bg-emerald-900 border border-emerald-700 text-amber-300 font-semibold text-xs flex items-center gap-1.5 cursor-pointer"
+                  title="Salin Link Verifikasi Kupon"
+                >
+                  {copiedCouponLink ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Link Tersalin!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Salin Link Kupon</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
                   onClick={handleDownloadTicketPng}
                   className="px-4 py-2 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-sm"
                 >
                   <Download className="w-4 h-4" />
-                  Unduh Kupon PNG
+                  <span>Unduh Kupon PNG</span>
                 </button>
               </div>
             </div>
@@ -1413,14 +1487,24 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
               />
             </div>
 
-            <button
-              type="button"
-              onClick={handleDownloadTwibbonPng}
-              className="w-full py-2.5 px-4 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-sm flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <Download className="w-4 h-4" />
-              Unduh Gambar Twibbon HAB ke-81 (PNG)
-            </button>
+            <div className="space-y-2.5 pt-1">
+              <button
+                type="button"
+                onClick={handleShareTwibbonToWa}
+                className="w-full py-2.5 px-4 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm flex items-center justify-center gap-2 cursor-pointer shadow"
+              >
+                <Share2 className="w-4 h-4" />
+                <span>Bagikan Gambar Twibbon Full ke WhatsApp</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleDownloadTwibbonPng}
+                className="w-full py-2.5 px-4 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-sm flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Download className="w-4 h-4" />
+                <span>Unduh Gambar Twibbon HAB ke-81 (PNG)</span>
+              </button>
+            </div>
           </div>
 
           <div className="lg:col-span-7 bg-[#03251c] border border-emerald-800/80 rounded-2xl p-6 flex flex-col items-center">

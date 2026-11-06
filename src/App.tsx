@@ -16,9 +16,10 @@ import { JalanSehatTwibbonSection } from './components/JalanSehatTwibbonSection'
 import { WallOfHarmonySection } from './components/WallOfHarmonySection';
 import { JournalSection } from './components/JournalSection';
 import { AdminControlModal } from './components/AdminControlModal';
+import { PanitiaInfoModal } from './components/PanitiaInfoModal';
 import { WelcomeVoicePlayer } from './components/WelcomeVoicePlayer';
 import { Hab81LogoBadge, KemenagLogoImg } from './components/DynamicLogoBadge';
-import { BookOpen, Check, Cloud, Edit3, Megaphone, Settings } from 'lucide-react';
+import { BookOpen, Check, Cloud, Edit3, Megaphone, Settings, Share2 } from 'lucide-react';
 
 import { validateImportedState } from './utils/habLogic';
 import {
@@ -95,7 +96,64 @@ export default function App() {
       return null;
     }
   });
+  const [panitiaInfoOpen, setPanitiaInfoOpen] = useState<boolean>(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      return params.get('info') === 'panitia';
+    } catch {
+      return false;
+    }
+  });
   const initialStateRef = useRef<AppState>(appState);
+
+  // Handle deep-link scrolling on initial load for ?jadwal=, ?menu=banner, ?menu=kupon, ?menu=twibbon
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const jadwalParam = params.get('jadwal');
+      const menuParam = params.get('menu');
+      let targetSection: string | null = null;
+      if (jadwalParam || menuParam === 'jadwal') {
+        targetSection = 'jadwal-acara';
+      } else if (menuParam === 'banner') {
+        targetSection = 'galeri-banner-satker';
+      } else if (menuParam === 'kupon' || menuParam === 'twibbon') {
+        targetSection = 'jalan-sehat';
+      }
+      if (targetSection) {
+        window.setTimeout(() => {
+          const el = document.getElementById(targetSection!);
+          if (el) el.scrollIntoView({ behavior: 'smooth' });
+        }, 200);
+      }
+    } catch {
+      // Ignore
+    }
+  }, []);
+
+  const openPanitiaInfoModal = () => {
+    setMenuTapTrigger((prev) => prev + 1);
+    setPanitiaInfoOpen(true);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set('info', 'panitia');
+      window.history.replaceState({}, '', url.toString());
+    } catch {
+      // Ignore
+    }
+  };
+
+  const closePanitiaInfoModal = () => {
+    setPanitiaInfoOpen(false);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('info');
+      url.searchParams.delete('pengumuman');
+      window.history.replaceState({}, '', url.toString());
+    } catch {
+      // Ignore
+    }
+  };
 
   // Listen to Firebase Auth state for Cloud Firestore permissions (Admin Mode UI still requires PIN)
   useEffect(() => {
@@ -757,17 +815,38 @@ export default function App() {
               className="px-1.5 py-0.5 rounded bg-[#021b15] border border-dashed border-amber-400 text-amber-300 text-xs w-28 focus:outline-none"
             />
           ) : (
-            <span>{tickerBadgeLabel}</span>
+            <button
+              type="button"
+              onClick={openPanitiaInfoModal}
+              className="hover:underline cursor-pointer text-left"
+              title="Klik untuk membuka Papan Informasi Panitia & Salin Link Pengumuman"
+            >
+              {tickerBadgeLabel}
+            </button>
           )}
         </div>
-        <div className="overflow-hidden flex-1">
-          <div className="animate-marquee whitespace-nowrap text-slate-200 font-medium">
+        <div
+          onClick={openPanitiaInfoModal}
+          className="overflow-hidden flex-1 cursor-pointer"
+          title="Klik untuk membaca lengkap & membagikan Informasi Panitia ke WhatsApp"
+        >
+          <div className="animate-marquee whitespace-nowrap text-slate-200 font-medium hover:text-amber-200">
             <span className="mx-4">{tickerText}</span>
             <span className="mx-4" aria-hidden="true">
               {tickerText}
             </span>
           </div>
         </div>
+        <button
+          type="button"
+          onClick={openPanitiaInfoModal}
+          className="px-2.5 py-1 rounded-md bg-emerald-800/90 hover:bg-emerald-700 border border-amber-400/40 text-amber-300 font-bold text-[11px] flex items-center gap-1 shrink-0 cursor-pointer"
+          title="Buka & Bagikan Link Informasi Panitia ke WhatsApp"
+        >
+          <Share2 className="w-3 h-3" />
+          <span className="hidden sm:inline">Link & Bagikan Info Panitia</span>
+          <span className="sm:hidden">Link Info</span>
+        </button>
       </div>
 
       {/* Strict 3-Zone Top Navigation Bar Contract */}
@@ -1139,6 +1218,16 @@ export default function App() {
           setIsAdminUnlocked(false);
           setIsInlineEditMode(false);
         }}
+      />
+
+      {/* Official Panitia Announcements & Deep-Link Directory Modal */}
+      <PanitiaInfoModal
+        isOpen={panitiaInfoOpen}
+        branding={appState.branding}
+        schedules={appState.schedules}
+        onClose={closePanitiaInfoModal}
+        onJumpToSection={scrollToSection}
+        onOpenJournal={() => openDedicatedJournalPage()}
       />
 
       {/* Quick Admin Control Panel Modal */}

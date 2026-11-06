@@ -1,9 +1,12 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { SatkerBannerCategory, SatkerBannerItem } from '../types/hab';
 import { compressBannerImageFile, normalizeBannerImageUrl } from '../utils/habLogic';
+import { buildDeepLink, shareToWhatsAppWithFullImage } from '../utils/shareUtils';
 import {
   Camera,
+  Check,
   CheckCircle2,
+  Copy,
   Download,
   Edit3,
   Eye,
@@ -16,6 +19,7 @@ import {
   RotateCcw,
   Search,
   Settings,
+  Share2,
   Trash2,
   Unlock,
   Upload,
@@ -85,11 +89,90 @@ export const SatkerBannerSection: React.FC<SatkerBannerSectionProps> = ({
   const [formError, setFormError] = useState<string | null>(null);
   const [formSuccess, setFormSuccess] = useState<string | null>(null);
 
-  // Lightbox Modal State
+  // Lightbox Modal State & Share Feedback
   const [lightboxItem, setLightboxItem] = useState<SatkerBannerItem | null>(null);
+  const [copiedBannerId, setCopiedBannerId] = useState<string | null>(null);
+  const [sharingBannerId, setSharingBannerId] = useState<string | null>(null);
+  const [lastCreatedBanner, setLastCreatedBanner] = useState<SatkerBannerItem | null>(null);
 
   // Broken image fallback tracking
   const [brokenIds, setBrokenIds] = useState<Record<string, boolean>>({});
+
+  // Auto-open Full-Screen Lightbox when visitor arrives via ?banner=<id>
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const bannerId = params.get('banner');
+      if (bannerId && banners.length > 0) {
+        const found = banners.find((b) => b.id === bannerId);
+        if (found) {
+          setLightboxItem(found);
+          const el = document.getElementById('galeri-banner-satker');
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth' });
+          }
+        }
+      }
+    } catch {
+      // Ignore URL parse errors
+    }
+  }, [banners]);
+
+  const openBannerFullScreen = (item: SatkerBannerItem) => {
+    setLightboxItem(item);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set('banner', item.id);
+      window.history.replaceState({}, '', url.toString());
+    } catch {
+      // Ignore
+    }
+  };
+
+  const closeBannerFullScreen = () => {
+    setLightboxItem(null);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('banner');
+      window.history.replaceState({}, '', url.toString());
+    } catch {
+      // Ignore
+    }
+  };
+
+  const handleCopyBannerLink = async (item: SatkerBannerItem) => {
+    const link = buildDeepLink({ banner: item.id });
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopiedBannerId(item.id);
+      window.setTimeout(() => setCopiedBannerId(null), 3000);
+    } catch {
+      setCopiedBannerId(item.id);
+    }
+  };
+
+  const handleShareBannerToWa = async (item: SatkerBannerItem) => {
+    setSharingBannerId(item.id);
+    try {
+      const link = buildDeepLink({ banner: item.id });
+      const waText =
+        `🎉 *${item.judul.toUpperCase()}*\n` +
+        `🏛️ *Satker:* ${item.satker}\n` +
+        `📂 *Kategori:* ${normalizeCategoryName(item.kategori)}\n` +
+        (item.bannerUcapan ? `\n_"${item.bannerUcapan}"_\n` : '') +
+        (item.keterangan ? `\n📝 ${item.keterangan}\n` : '') +
+        `\n🔗 *Lihat Spanduk / Foto Ukuran Penuh (Full) di Portal Resmi HAB ke-81:*\n${link}`;
+
+      await shareToWhatsAppWithFullImage({
+        title: `${item.judul} — ${item.satker}`,
+        waText,
+        imageSrc: normalizeBannerImageUrl(item.imageUrl),
+        fileName: `banner-${item.id}.jpg`,
+      });
+    } finally {
+      setSharingBannerId(null);
+    }
+  };
 
   // Admin PIN Gate & Inline Edit State
   const [showPinModal, setShowPinModal] = useState<boolean>(false);
@@ -243,6 +326,7 @@ export const SatkerBannerSection: React.FC<SatkerBannerSectionProps> = ({
     };
 
     onAddBanner(newItem, isCustomSatker ? finalSatker : undefined);
+    setLastCreatedBanner(newItem);
     setJudul('');
     setImageUrlInput('');
     setUploadedDataUrl('');
@@ -251,7 +335,7 @@ export const SatkerBannerSection: React.FC<SatkerBannerSectionProps> = ({
     setKeterangan('');
     setSelectedCategory(finalKategori);
     setFormSuccess(
-      `Dokumentasi "${newItem.judul}" (${finalKategori}) dari "${finalSatker}" berhasil ditampilkan.`
+      `Dokumentasi "${newItem.judul}" (${finalKategori}) dari "${finalSatker}" berhasil ditampilkan. Anda dapat langsung menyalin link atau membagikan gambar penuhnya ke WhatsApp!`
     );
   };
 
@@ -639,18 +723,49 @@ export const SatkerBannerSection: React.FC<SatkerBannerSectionProps> = ({
       )}
 
       {formSuccess && (
-        <div className="p-3.5 rounded-xl bg-emerald-900/90 border border-emerald-500/60 text-xs text-emerald-100 flex items-center justify-between gap-3">
+        <div className="p-4 rounded-xl bg-emerald-900/90 border border-amber-400/60 text-xs text-emerald-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-amber-300 shrink-0" />
             <span>{formSuccess}</span>
           </div>
-          <button
-            type="button"
-            onClick={() => setFormSuccess(null)}
-            className="text-emerald-300 hover:text-white text-xs cursor-pointer"
-          >
-            Tutup
-          </button>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {lastCreatedBanner && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => handleShareBannerToWa(lastCreatedBanner)}
+                  className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Share2 className="w-3.5 h-3.5" />
+                  <span>Bagikan ke WA (Full)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleCopyBannerLink(lastCreatedBanner)}
+                  className="px-3 py-1.5 rounded-lg bg-[#021b15] hover:bg-emerald-950 border border-amber-400/50 text-amber-300 font-semibold flex items-center gap-1.5 cursor-pointer"
+                >
+                  {copiedBannerId === lastCreatedBanner.id ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Link Tersalin!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Salin Link Banner</span>
+                    </>
+                  )}
+                </button>
+              </>
+            )}
+            <button
+              type="button"
+              onClick={() => setFormSuccess(null)}
+              className="text-emerald-300 hover:text-white text-xs px-2 cursor-pointer"
+            >
+              Tutup
+            </button>
+          </div>
         </div>
       )}
 
@@ -793,12 +908,12 @@ export const SatkerBannerSection: React.FC<SatkerBannerSectionProps> = ({
                             [item.id]: true,
                           }))
                         }
-                        onClick={() => setLightboxItem(item)}
+                        onClick={() => openBannerFullScreen(item)}
                         className="w-full h-full object-cover cursor-pointer transition-transform duration-200 group-hover:scale-[1.02]"
                       />
                     ) : (
                       <div
-                        onClick={() => setLightboxItem(item)}
+                        onClick={() => openBannerFullScreen(item)}
                         className="w-full h-full flex flex-col items-center justify-center p-6 text-center bg-gradient-to-br from-[#022c22] via-[#064e3b] to-[#021b15] cursor-pointer"
                       >
                         <ImageIcon className="w-8 h-8 text-amber-300 mb-2" />
@@ -810,7 +925,7 @@ export const SatkerBannerSection: React.FC<SatkerBannerSectionProps> = ({
                     {/* Quick Zoom Button */}
                     <button
                       type="button"
-                      onClick={() => setLightboxItem(item)}
+                      onClick={() => openBannerFullScreen(item)}
                       className="absolute bottom-3 right-3 px-2.5 py-1.5 rounded-lg bg-black/75 hover:bg-black/90 text-amber-200 text-[11px] font-semibold flex items-center gap-1.5 cursor-pointer"
                     >
                       <Maximize2 className="w-3.5 h-3.5" />
@@ -849,16 +964,48 @@ export const SatkerBannerSection: React.FC<SatkerBannerSectionProps> = ({
                   </div>
                 </div>
 
-                {/* Card Footer with Lightbox View & Admin Edit/Delete */}
-                <div className="px-5 py-3 bg-[#021b15]/90 border-t border-emerald-800/80 flex items-center justify-between gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setLightboxItem(item)}
-                    className="text-xs text-emerald-300 hover:text-amber-300 font-semibold flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Eye className="w-3.5 h-3.5" />
-                    <span>Lihat Ukuran Penuh</span>
-                  </button>
+                {/* Card Footer with Lightbox View, WhatsApp Share, Copy Link & Admin Edit/Delete */}
+                <div className="px-5 py-3 bg-[#021b15]/90 border-t border-emerald-800/80 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => openBannerFullScreen(item)}
+                      className="px-2.5 py-1.5 rounded-lg bg-[#03251c] hover:bg-emerald-900 border border-emerald-700 text-[11px] text-emerald-200 hover:text-amber-300 font-semibold flex items-center gap-1 cursor-pointer"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>Tampil Full</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={sharingBannerId === item.id}
+                      onClick={() => handleShareBannerToWa(item)}
+                      className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                      title="Bagikan Gambar Spanduk Utuh (Full) + Link ke WhatsApp"
+                    >
+                      <Share2 className="w-3.5 h-3.5" />
+                      <span>
+                        {sharingBannerId === item.id ? 'Menyiapkan...' : 'Bagikan WA (Full)'}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleCopyBannerLink(item)}
+                      className="px-2.5 py-1.5 rounded-lg bg-[#03251c] hover:bg-emerald-900 border border-emerald-700 text-amber-300 text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
+                      title="Salin Link Khusus Banner ini untuk dibagikan ke WhatsApp"
+                    >
+                      {copiedBannerId === item.id ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>Link Tersalin!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>Salin Link</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
 
                   <div className="flex items-center gap-1.5">
                     <button
@@ -867,7 +1014,7 @@ export const SatkerBannerSection: React.FC<SatkerBannerSectionProps> = ({
                       className="px-2.5 py-1 rounded-lg bg-[#03251c] hover:bg-emerald-900 border border-emerald-700 text-amber-300 text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
                     >
                       <Edit3 className="w-3 h-3" />
-                      <span>Edit (Admin)</span>
+                      <span>Edit</span>
                     </button>
                     <button
                       type="button"
@@ -989,14 +1136,39 @@ export const SatkerBannerSection: React.FC<SatkerBannerSectionProps> = ({
           className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
         >
           <div className="bg-[#03251c] border border-amber-400/60 rounded-2xl max-w-5xl w-full overflow-hidden shadow-2xl">
-            <div className="px-5 py-3.5 bg-[#021b15] border-b border-emerald-800 flex items-center justify-between gap-4">
+            <div className="px-5 py-3.5 bg-[#021b15] border-b border-emerald-800 flex flex-wrap items-center justify-between gap-4">
               <div className="min-w-0">
                 <div className="text-xs text-amber-300 font-semibold truncate">
                   {lightboxItem.satker} · {normalizeCategoryName(lightboxItem.kategori)}
                 </div>
                 <h3 className="text-base font-bold text-white truncate">{lightboxItem.judul}</h3>
               </div>
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleShareBannerToWa(lightboxItem)}
+                  className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Share2 className="w-3.5 h-3.5" />
+                  <span>Bagikan ke WhatsApp (Gambar Full + Link)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleCopyBannerLink(lightboxItem)}
+                  className="px-3 py-1.5 rounded-lg bg-[#03251c] hover:bg-emerald-900 border border-emerald-700 text-amber-300 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                >
+                  {copiedBannerId === lightboxItem.id ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Link Tersalin!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Salin Link Banner</span>
+                    </>
+                  )}
+                </button>
                 <a
                   href={normalizeBannerImageUrl(lightboxItem.imageUrl)}
                   target="_blank"
@@ -1005,11 +1177,11 @@ export const SatkerBannerSection: React.FC<SatkerBannerSectionProps> = ({
                   className="px-3 py-1.5 rounded-lg bg-emerald-800 hover:bg-emerald-700 text-amber-200 text-xs font-semibold flex items-center gap-1.5"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  <span>Unduh / Buka Gambar</span>
+                  <span>Unduh Gambar</span>
                 </a>
                 <button
                   type="button"
-                  onClick={() => setLightboxItem(null)}
+                  onClick={closeBannerFullScreen}
                   className="px-3 py-1.5 rounded-lg bg-emerald-950 text-slate-200 hover:text-white text-xs font-semibold flex items-center gap-1 cursor-pointer"
                 >
                   <X className="w-4 h-4" />
