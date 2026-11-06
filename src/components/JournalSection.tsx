@@ -675,7 +675,7 @@ export const JournalSection: React.FC<JournalSectionProps> = ({
                 </div>
               </div>
 
-              {/* WhatsApp Share Buttons (Foto Utama + Link Situs) */}
+              {/* WhatsApp Share Button (Foto Utama + Link Situs) */}
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
@@ -684,15 +684,6 @@ export const JournalSection: React.FC<JournalSectionProps> = ({
                 >
                   <Share2 className="w-4 h-4" />
                   <span>Bagikan ke WhatsApp (Foto Utama + Link)</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void handleCopyArticleLink(activeArticle)}
-                  className="px-3 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold text-xs flex items-center gap-1.5 cursor-pointer"
-                  title="Salin Link Berita"
-                >
-                  <Copy className="w-3.5 h-3.5" />
-                  <span>Salin Link</span>
                 </button>
               </div>
             </div>

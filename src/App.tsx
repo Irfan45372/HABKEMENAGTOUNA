@@ -841,11 +841,11 @@ export default function App() {
           type="button"
           onClick={openPanitiaInfoModal}
           className="px-2.5 py-1 rounded-md bg-emerald-800/90 hover:bg-emerald-700 border border-amber-400/40 text-amber-300 font-bold text-[11px] flex items-center gap-1 shrink-0 cursor-pointer"
-          title="Buka & Bagikan Link Informasi Panitia ke WhatsApp"
+          title="Buka & Bagikan Informasi Panitia ke WhatsApp"
         >
           <Share2 className="w-3 h-3" />
-          <span className="hidden sm:inline">Link & Bagikan Info Panitia</span>
-          <span className="sm:hidden">Link Info</span>
+          <span className="hidden sm:inline">Bagikan Info Panitia</span>
+          <span className="sm:hidden">Info Panitia</span>
         </button>
       </div>
 
@@ -1225,6 +1225,14 @@ export default function App() {
         isOpen={panitiaInfoOpen}
         branding={appState.branding}
         schedules={appState.schedules}
+        adminPin={appState.branding.adminPin}
+        isAdminUnlocked={isAdminUnlocked}
+        onUnlockAdmin={() => setIsAdminUnlocked(true)}
+        onUpdateBranding={handleUpdateBranding}
+        onOpenAdminTab={(tabIdx) => {
+          closePanitiaInfoModal();
+          handleOpenAdminTab(tabIdx);
+        }}
         onClose={closePanitiaInfoModal}
         onJumpToSection={scrollToSection}
         onOpenJournal={() => openDedicatedJournalPage()}

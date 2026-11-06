@@ -527,32 +527,11 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
                             e.stopPropagation();
                             void handleShareCompToWa(comp);
                           }}
-                          className="px-2 py-0.5 rounded bg-emerald-700 hover:bg-emerald-600 text-white text-[11px] font-semibold inline-flex items-center gap-1 cursor-pointer"
+                          className="px-2.5 py-0.5 rounded bg-emerald-700 hover:bg-emerald-600 text-white text-[11px] font-semibold inline-flex items-center gap-1 cursor-pointer"
                           title="Bagikan Info & Link Pendaftaran Lomba ke WhatsApp"
                         >
                           <Share2 className="w-3 h-3" />
-                          <span>WA</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            void handleCopyCompLink(comp, false);
-                          }}
-                          className="px-2 py-0.5 rounded bg-[#03251c] hover:bg-emerald-900 border border-emerald-700 text-amber-300 text-[11px] font-semibold inline-flex items-center gap-1 cursor-pointer"
-                          title="Salin Link Pendaftaran Cabang Lomba ini"
-                        >
-                          {copiedCompId === comp.id ? (
-                            <>
-                              <Check className="w-3 h-3 text-emerald-400" />
-                              <span>Tersalin</span>
-                            </>
-                          ) : (
-                            <>
-                              <Copy className="w-3 h-3" />
-                              <span>Link</span>
-                            </>
-                          )}
+                          <span>Bagikan WA</span>
                         </button>
                         <button
                           type="button"

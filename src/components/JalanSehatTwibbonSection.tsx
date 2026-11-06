@@ -1052,24 +1052,6 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
                 </button>
                 <button
                   type="button"
-                  onClick={handleCopyCouponLink}
-                  className="px-3 py-2 rounded-lg bg-[#021b15] hover:bg-emerald-900 border border-emerald-700 text-amber-300 font-semibold text-xs flex items-center gap-1.5 cursor-pointer"
-                  title="Salin Link Verifikasi Kupon"
-                >
-                  {copiedCouponLink ? (
-                    <>
-                      <Check className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Link Tersalin!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-3.5 h-3.5" />
-                      <span>Salin Link Kupon</span>
-                    </>
-                  )}
-                </button>
-                <button
-                  type="button"
                   onClick={handleDownloadTicketPng}
                   className="px-4 py-2 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-sm"
                 >

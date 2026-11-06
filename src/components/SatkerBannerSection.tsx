@@ -730,33 +730,14 @@ export const SatkerBannerSection: React.FC<SatkerBannerSectionProps> = ({
           </div>
           <div className="flex flex-wrap items-center gap-2 shrink-0">
             {lastCreatedBanner && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => handleShareBannerToWa(lastCreatedBanner)}
-                  className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Share2 className="w-3.5 h-3.5" />
-                  <span>Bagikan ke WA (Full)</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleCopyBannerLink(lastCreatedBanner)}
-                  className="px-3 py-1.5 rounded-lg bg-[#021b15] hover:bg-emerald-950 border border-amber-400/50 text-amber-300 font-semibold flex items-center gap-1.5 cursor-pointer"
-                >
-                  {copiedBannerId === lastCreatedBanner.id ? (
-                    <>
-                      <Check className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Link Tersalin!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-3.5 h-3.5" />
-                      <span>Salin Link Banner</span>
-                    </>
-                  )}
-                </button>
-              </>
+              <button
+                type="button"
+                onClick={() => handleShareBannerToWa(lastCreatedBanner)}
+                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold flex items-center gap-1.5 cursor-pointer"
+              >
+                <Share2 className="w-3.5 h-3.5" />
+                <span>Bagikan ke WA (Full)</span>
+              </button>
             )}
             <button
               type="button"
@@ -964,7 +945,7 @@ export const SatkerBannerSection: React.FC<SatkerBannerSectionProps> = ({
                   </div>
                 </div>
 
-                {/* Card Footer with Lightbox View, WhatsApp Share, Copy Link & Admin Edit/Delete */}
+                {/* Card Footer with Lightbox View, WhatsApp Share & Admin Edit/Delete */}
                 <div className="px-5 py-3 bg-[#021b15]/90 border-t border-emerald-800/80 flex flex-wrap items-center justify-between gap-2">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <button
@@ -986,24 +967,6 @@ export const SatkerBannerSection: React.FC<SatkerBannerSectionProps> = ({
                       <span>
                         {sharingBannerId === item.id ? 'Menyiapkan...' : 'Bagikan WA (Full)'}
                       </span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleCopyBannerLink(item)}
-                      className="px-2.5 py-1.5 rounded-lg bg-[#03251c] hover:bg-emerald-900 border border-emerald-700 text-amber-300 text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
-                      title="Salin Link Khusus Banner ini untuk dibagikan ke WhatsApp"
-                    >
-                      {copiedBannerId === item.id ? (
-                        <>
-                          <Check className="w-3.5 h-3.5 text-emerald-400" />
-                          <span>Link Tersalin!</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-3.5 h-3.5" />
-                          <span>Salin Link</span>
-                        </>
-                      )}
                     </button>
                   </div>
 
@@ -1151,23 +1114,6 @@ export const SatkerBannerSection: React.FC<SatkerBannerSectionProps> = ({
                 >
                   <Share2 className="w-3.5 h-3.5" />
                   <span>Bagikan ke WhatsApp (Gambar Full + Link)</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleCopyBannerLink(lightboxItem)}
-                  className="px-3 py-1.5 rounded-lg bg-[#03251c] hover:bg-emerald-900 border border-emerald-700 text-amber-300 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
-                >
-                  {copiedBannerId === lightboxItem.id ? (
-                    <>
-                      <Check className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Link Tersalin!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-3.5 h-3.5" />
-                      <span>Salin Link Banner</span>
-                    </>
-                  )}
                 </button>
                 <a
                   href={normalizeBannerImageUrl(lightboxItem.imageUrl)}
