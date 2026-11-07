@@ -292,12 +292,15 @@ export const HeroScene3D: React.FC<HeroScene3DProps> = ({
       return;
     }
 
+    const isMobileScreen = window.innerWidth < 768;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.12;
-    renderer.setPixelRatio(isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(
+      isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, isMobileScreen ? 1.25 : 1.75)
+    );
     renderer.setSize(width, height);
-    renderer.shadowMap.enabled = !isSoftwareGl;
+    renderer.shadowMap.enabled = !isSoftwareGl && !isMobileScreen;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     container.innerHTML = '';
@@ -666,10 +669,12 @@ export const HeroScene3D: React.FC<HeroScene3DProps> = ({
     const resizeObserver = new ResizeObserver(onResize);
     resizeObserver.observe(container);
 
-    // Paced Animation Loop (supports software WebGL afterDraw rule)
+    // Paced Animation Loop (pauses automatically when scrolled out of view on mobile/desktop)
     const clock = new THREE.Clock();
     let frameId = 0;
     let isDisposed = false;
+    let isInViewport = true;
+    let isLoopRunning = false;
 
     function afterDraw(cb: () => void) {
       const gl = renderer.getContext() as WebGL2RenderingContext;
@@ -680,7 +685,10 @@ export const HeroScene3D: React.FC<HeroScene3DProps> = ({
       const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
       gl.flush();
       const poll = () => {
-        if (isDisposed) return;
+        if (isDisposed || !isInViewport || document.hidden) {
+          isLoopRunning = false;
+          return;
+        }
         const state = sync && gl.getSyncParameter(sync, gl.SYNC_STATUS);
         if (state === gl.UNSIGNALED) {
           frameId = window.setTimeout(poll, 5);
@@ -698,7 +706,11 @@ export const HeroScene3D: React.FC<HeroScene3DProps> = ({
     let currentExplode = 0;
 
     function tick() {
-      if (isDisposed) return;
+      if (isDisposed || !isInViewport || document.hidden) {
+        isLoopRunning = false;
+        return;
+      }
+      isLoopRunning = true;
       const dt = Math.min(clock.getDelta(), 0.1);
       const state = controlStateRef.current;
       elapsed += dt * state.ribbonSpeed;
@@ -761,12 +773,52 @@ export const HeroScene3D: React.FC<HeroScene3DProps> = ({
       }
     }
 
+    const startOrResumeLoop = () => {
+      if (isDisposed || isLoopRunning || !isInViewport || document.hidden) return;
+      clock.getDelta();
+      tick();
+    };
+
+    const visibilityObserver =
+      typeof IntersectionObserver !== 'undefined'
+        ? new IntersectionObserver(
+            (entries) => {
+              const entry = entries[0];
+              if (!entry) return;
+              isInViewport = entry.isIntersecting;
+              if (isInViewport) {
+                startOrResumeLoop();
+              } else {
+                cancelAnimationFrame(frameId);
+                clearTimeout(frameId);
+                isLoopRunning = false;
+              }
+            },
+            { rootMargin: '150px 0px 150px 0px', threshold: 0.01 }
+          )
+        : null;
+
+    visibilityObserver?.observe(container);
+
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        cancelAnimationFrame(frameId);
+        clearTimeout(frameId);
+        isLoopRunning = false;
+      } else if (isInViewport) {
+        startOrResumeLoop();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
     tick();
 
     return () => {
       isDisposed = true;
       cancelAnimationFrame(frameId);
       clearTimeout(frameId);
+      visibilityObserver?.disconnect();
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       resizeObserver.disconnect();
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('resize', onResize);
@@ -998,7 +1050,7 @@ export const HeroScene3D: React.FC<HeroScene3DProps> = ({
               className="px-4 py-2.5 rounded-lg bg-[#042f24] hover:bg-emerald-900 text-emerald-200 border border-emerald-700/70 font-medium text-sm flex items-center gap-2 transition-colors cursor-pointer whitespace-nowrap shrink-0"
             >
               <Compass className="w-4 h-4 text-emerald-400" />
-              Peta 3D Lokasi Acara
+              Peta GPS & Titik Koordinat
             </button>
           </div>
 

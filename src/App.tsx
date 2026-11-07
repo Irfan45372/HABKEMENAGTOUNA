@@ -4,7 +4,7 @@
  */
 
 import React, { useEffect, useRef, useState } from 'react';
-import { AppState, BrandingConfig, Competition, HarmonyMessage, JalanSehatCoupon, JournalArticle, NavLabelsConfig, ParticipantRegistration, SatkerBannerItem, VideoItem } from './types/hab';
+import { AppState, BrandingConfig, Competition, HarmonyMessage, JalanSehatCoupon, JournalArticle, NavLabelsConfig, ParticipantRegistration, SatkerBannerItem, VenueLocation, VideoItem } from './types/hab';
 import { DEFAULT_APP_STATE, STORAGE_KEY } from './data/defaultState';
 import { HeroScene3D } from './components/HeroScene3D';
 import { VenueMap3D } from './components/VenueMap3D';
@@ -18,6 +18,7 @@ import { JournalSection } from './components/JournalSection';
 import { AdminControlModal } from './components/AdminControlModal';
 import { PanitiaInfoModal } from './components/PanitiaInfoModal';
 import { WelcomeVoicePlayer } from './components/WelcomeVoicePlayer';
+import { ViewportLazySection } from './components/ViewportLazySection';
 import { Hab81LogoBadge, KemenagLogoImg } from './components/DynamicLogoBadge';
 import { BookOpen, Check, Cloud, Edit3, Megaphone, Settings, Share2 } from 'lucide-react';
 
@@ -104,30 +105,53 @@ export default function App() {
       return false;
     }
   });
-  const initialStateRef = useRef<AppState>(appState);
-
-  // Handle deep-link scrolling on initial load for ?jadwal=, ?menu=banner, ?menu=kupon, ?menu=twibbon
-  useEffect(() => {
+  const [forcedSectionId, setForcedSectionId] = useState<string | null>(() => {
     try {
       const params = new URLSearchParams(window.location.search);
-      const jadwalParam = params.get('jadwal');
-      const menuParam = params.get('menu');
-      let targetSection: string | null = null;
-      if (jadwalParam || menuParam === 'jadwal') {
-        targetSection = 'jadwal-acara';
-      } else if (menuParam === 'banner') {
-        targetSection = 'galeri-banner-satker';
-      } else if (menuParam === 'kupon' || menuParam === 'twibbon') {
-        targetSection = 'jalan-sehat';
+      const hash = window.location.hash.replace(/^#/, '');
+      if (params.get('lomba') || params.get('menu') === 'lomba') return 'pendaftaran-lomba';
+      if (params.get('banner') || params.get('menu') === 'banner') return 'spanduk-satker';
+      if (
+        params.get('kupon') ||
+        params.get('menu') === 'kupon' ||
+        params.get('menu') === 'twibbon'
+      ) {
+        return 'jalan-sehat';
       }
-      if (targetSection) {
-        window.setTimeout(() => {
-          const el = document.getElementById(targetSection!);
-          if (el) el.scrollIntoView({ behavior: 'smooth' });
-        }, 200);
-      }
+      if (params.get('jadwal') || params.get('menu') === 'jadwal') return 'jadwal-acara';
+      if (params.get('menu') === 'peta') return 'peta-lokasi';
+      if (hash) return hash;
+      return null;
     } catch {
-      // Ignore
+      return null;
+    }
+  });
+  const forcedTimerRef = useRef<number | undefined>(undefined);
+  const initialStateRef = useRef<AppState>(appState);
+
+  const wakeAndScrollToSection = (sectionId: string) => {
+    setForcedSectionId(sectionId);
+    if (forcedTimerRef.current) {
+      window.clearTimeout(forcedTimerRef.current);
+    }
+    forcedTimerRef.current = window.setTimeout(() => {
+      setForcedSectionId((prev) => (prev === sectionId ? null : prev));
+    }, 4000);
+
+    window.setTimeout(() => {
+      const el = document.getElementById(sectionId);
+      if (el) el.scrollIntoView({ behavior: 'smooth' });
+    }, 40);
+  };
+
+  // Handle deep-link scrolling on initial load for ?jadwal=, ?lomba=, ?banner=, ?kupon=, ?menu=...
+  useEffect(() => {
+    if (forcedSectionId && !isJournalPageOpen) {
+      const t = window.setTimeout(() => {
+        const el = document.getElementById(forcedSectionId);
+        if (el) el.scrollIntoView({ behavior: 'smooth' });
+      }, 220);
+      return () => window.clearTimeout(t);
     }
   }, []);
 
@@ -390,10 +414,7 @@ export default function App() {
       // Ignore
     }
     if (targetSectionId) {
-      setTimeout(() => {
-        const el = document.getElementById(targetSectionId);
-        if (el) el.scrollIntoView({ behavior: 'smooth' });
-      }, 60);
+      wakeAndScrollToSection(targetSectionId);
     } else {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
@@ -405,10 +426,7 @@ export default function App() {
       closeDedicatedJournalPage(sectionId);
       return;
     }
-    const el = document.getElementById(sectionId);
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth' });
-    }
+    wakeAndScrollToSection(sectionId);
   };
 
   const handleAddRegistration = (reg: ParticipantRegistration, newSatkerName?: string) => {
@@ -687,6 +705,39 @@ export default function App() {
     scrollToSection('pendaftaran-lomba');
   };
 
+  const handleAddVenue = (venue: VenueLocation) => {
+    setAppState((prev) => {
+      const next = {
+        ...prev,
+        venues: [...prev.venues, venue],
+      };
+      void savePortalConfigToCloud(next);
+      return next;
+    });
+  };
+
+  const handleUpdateVenue = (id: string, partial: Partial<VenueLocation>) => {
+    setAppState((prev) => {
+      const next = {
+        ...prev,
+        venues: prev.venues.map((v) => (v.id === id ? { ...v, ...partial } : v)),
+      };
+      void savePortalConfigToCloud(next);
+      return next;
+    });
+  };
+
+  const handleDeleteVenue = (id: string) => {
+    setAppState((prev) => {
+      const next = {
+        ...prev,
+        venues: prev.venues.filter((v) => v.id !== id),
+      };
+      void savePortalConfigToCloud(next);
+      return next;
+    });
+  };
+
   const handleOpenAdminTab = (tabIndex: number) => {
     setAdminInitialTab(tabIndex);
     setAdminModalOpen(true);
@@ -962,11 +1013,8 @@ export default function App() {
               <a
                 href="#peta-lokasi"
                 onClick={(e) => {
-                  setMenuTapTrigger((prev) => prev + 1);
-                  if (isJournalPageOpen) {
-                    e.preventDefault();
-                    closeDedicatedJournalPage('peta-lokasi');
-                  }
+                  e.preventDefault();
+                  scrollToSection('peta-lokasi');
                 }}
                 className="hover:text-amber-300 hover:underline underline-offset-4 transition-colors whitespace-nowrap shrink-0"
               >
@@ -975,11 +1023,8 @@ export default function App() {
               <a
                 href="#pendaftaran-lomba"
                 onClick={(e) => {
-                  setMenuTapTrigger((prev) => prev + 1);
-                  if (isJournalPageOpen) {
-                    e.preventDefault();
-                    closeDedicatedJournalPage('pendaftaran-lomba');
-                  }
+                  e.preventDefault();
+                  scrollToSection('pendaftaran-lomba');
                 }}
                 className="hover:text-amber-300 hover:underline underline-offset-4 transition-colors whitespace-nowrap shrink-0"
               >
@@ -988,11 +1033,8 @@ export default function App() {
               <a
                 href="#jadwal-acara"
                 onClick={(e) => {
-                  setMenuTapTrigger((prev) => prev + 1);
-                  if (isJournalPageOpen) {
-                    e.preventDefault();
-                    closeDedicatedJournalPage('jadwal-acara');
-                  }
+                  e.preventDefault();
+                  scrollToSection('jadwal-acara');
                 }}
                 className="hover:text-amber-300 hover:underline underline-offset-4 transition-colors whitespace-nowrap shrink-0"
               >
@@ -1001,11 +1043,8 @@ export default function App() {
               <a
                 href="#jalan-sehat"
                 onClick={(e) => {
-                  setMenuTapTrigger((prev) => prev + 1);
-                  if (isJournalPageOpen) {
-                    e.preventDefault();
-                    closeDedicatedJournalPage('jalan-sehat');
-                  }
+                  e.preventDefault();
+                  scrollToSection('jalan-sehat');
                 }}
                 className="hover:text-amber-300 hover:underline underline-offset-4 transition-colors whitespace-nowrap shrink-0"
               >
@@ -1041,7 +1080,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main Content Flow: Dedicated Distraction-Free Journal Mode OR Main Portal */}
+      {/* Main Content Flow: Dedicated Distraction-Free Journal Mode OR Viewport-Aware Main Portal */}
       <main className="flex-1">
         {isJournalPageOpen ? (
           <JournalSection
@@ -1060,100 +1099,163 @@ export default function App() {
         ) : (
           <>
             {/* 1. 3D Hero Section: Jalinan Kerukunan & 3D Emblem Kemenag + Countdown */}
-            <HeroScene3D
-              branding={appState.branding}
-              totalCompetitions={appState.competitions.length}
-              totalRegistrations={appState.registrations.length}
-              totalCoupons={appState.coupons.length}
-              isInlineEditMode={isInlineEditMode}
-              onUpdateBranding={handleUpdateBranding}
-              onNavigateSection={scrollToSection}
-              onOpenAdmin={() => handleOpenAdminTab(0)}
-              onOpenAdminBranding={() => handleOpenAdminTab(4)}
-            />
+            <ViewportLazySection
+              sectionId="beranda"
+              label="Beranda 3D HAB ke-81"
+              fallbackMinHeight={680}
+              forceMount={forcedSectionId === 'beranda' || isInlineEditMode}
+            >
+              <HeroScene3D
+                branding={appState.branding}
+                totalCompetitions={appState.competitions.length}
+                totalRegistrations={appState.registrations.length}
+                totalCoupons={appState.coupons.length}
+                isInlineEditMode={isInlineEditMode}
+                onUpdateBranding={handleUpdateBranding}
+                onNavigateSection={scrollToSection}
+                onOpenAdmin={() => handleOpenAdminTab(0)}
+                onOpenAdminBranding={() => handleOpenAdminTab(4)}
+              />
+            </ViewportLazySection>
 
-            {/* 2. 2.5D Isometric Interactive Venue Map of Kabupaten Tojo Una-Una */}
-            <VenueMap3D
-              venues={appState.venues}
-              competitions={appState.competitions}
-              schedules={appState.schedules}
-              selectedVenueId={selectedVenueId}
-              onSelectVenue={setSelectedVenueId}
-              onJumpToRegister={handleJumpToRegisterFromMap}
-            />
+            {/* 2. Peta GPS Satelit & Titik Koordinat Kegiatan Kabupaten Tojo Una-Una */}
+            <ViewportLazySection
+              sectionId="peta-lokasi"
+              label="Peta GPS Satelit & Titik Koordinat"
+              fallbackMinHeight={640}
+              forceMount={forcedSectionId === 'peta-lokasi'}
+            >
+              <VenueMap3D
+                venues={appState.venues}
+                competitions={appState.competitions}
+                schedules={appState.schedules}
+                selectedVenueId={selectedVenueId}
+                onSelectVenue={setSelectedVenueId}
+                onJumpToRegister={handleJumpToRegisterFromMap}
+                adminPin={appState.branding.adminPin}
+                isAdminUnlocked={isAdminUnlocked}
+                onUnlockAdmin={() => setIsAdminUnlocked(true)}
+                onAddVenue={handleAddVenue}
+                onUpdateVenue={handleUpdateVenue}
+                onDeleteVenue={handleDeleteVenue}
+                onOpenAdminMapTab={() => handleOpenAdminTab(1)}
+              />
+            </ViewportLazySection>
 
             {/* 3. Flexible Competition Registration, Directory, Scoreboard & Medals */}
-            <CompetitionSection
-              competitions={appState.competitions}
-              satkerList={appState.satkerList}
-              registrations={appState.registrations}
-              matches={appState.matches}
-              medalStandings={appState.medalStandings}
-              allowCustomProposal={appState.branding.allowCustomCompetitionProposal}
-              preselectedCompetitionId={preselectedCompId}
-              adminPin={appState.branding.adminPin}
-              isAdminUnlocked={isAdminUnlocked}
-              onUnlockAdmin={() => setIsAdminUnlocked(true)}
-              onUpdateCompetition={handleUpdateCompetition}
-              onAddRegistration={handleAddRegistration}
-            />
+            <ViewportLazySection
+              sectionId="pendaftaran-lomba"
+              label="Pendaftaran Lomba & Klasemen"
+              fallbackMinHeight={760}
+              forceMount={forcedSectionId === 'pendaftaran-lomba' || Boolean(preselectedCompId)}
+            >
+              <CompetitionSection
+                competitions={appState.competitions}
+                satkerList={appState.satkerList}
+                registrations={appState.registrations}
+                matches={appState.matches}
+                medalStandings={appState.medalStandings}
+                allowCustomProposal={appState.branding.allowCustomCompetitionProposal}
+                preselectedCompetitionId={preselectedCompId}
+                adminPin={appState.branding.adminPin}
+                isAdminUnlocked={isAdminUnlocked}
+                onUnlockAdmin={() => setIsAdminUnlocked(true)}
+                onUpdateCompetition={handleUpdateCompetition}
+                onAddRegistration={handleAddRegistration}
+              />
+            </ViewportLazySection>
 
             {/* 4. Dynamic Multi-Category Schedule & Bakti Sosial Impact Dashboard */}
-            <ScheduleBaksosSection
-              schedules={appState.schedules}
-              baksosMetrics={appState.baksosMetrics}
-              onFocusVenueOnMap={handleFocusVenueOnMap}
-              onOpenAdminTab={handleOpenAdminTab}
-            />
+            <ViewportLazySection
+              sectionId="jadwal-acara"
+              label="Jadwal Acara & Bakti Sosial"
+              fallbackMinHeight={620}
+              forceMount={forcedSectionId === 'jadwal-acara'}
+            >
+              <ScheduleBaksosSection
+                schedules={appState.schedules}
+                baksosMetrics={appState.baksosMetrics}
+                onFocusVenueOnMap={handleFocusVenueOnMap}
+                onOpenAdminTab={handleOpenAdminTab}
+              />
+            </ViewportLazySection>
 
             {/* 5. Galeri Video, Dokumentasi & Link YouTube Satker */}
-            <VideoGallerySection
-              videos={appState.videos || DEFAULT_APP_STATE.videos || []}
-              satkerList={appState.satkerList}
-              adminPin={appState.branding.adminPin}
-              isAdminUnlocked={isAdminUnlocked}
-              onUnlockAdmin={() => setIsAdminUnlocked(true)}
-              onAddVideo={handleAddVideo}
-              onUpdateVideo={handleUpdateVideo}
-              onDeleteVideo={handleDeleteVideo}
-              onOpenAdminVideoTab={() => handleOpenAdminTab(3)}
-            />
+            <ViewportLazySection
+              sectionId="galeri-video"
+              label="Galeri Video & Dokumentasi"
+              fallbackMinHeight={520}
+              forceMount={forcedSectionId === 'galeri-video'}
+            >
+              <VideoGallerySection
+                videos={appState.videos || DEFAULT_APP_STATE.videos || []}
+                satkerList={appState.satkerList}
+                adminPin={appState.branding.adminPin}
+                isAdminUnlocked={isAdminUnlocked}
+                onUnlockAdmin={() => setIsAdminUnlocked(true)}
+                onAddVideo={handleAddVideo}
+                onUpdateVideo={handleUpdateVideo}
+                onDeleteVideo={handleDeleteVideo}
+                onOpenAdminVideoTab={() => handleOpenAdminTab(3)}
+              />
+            </ViewportLazySection>
 
             {/* 6. Galeri Spanduk, Banner Ucapan & Foto Persiapan/Kegiatan Satker */}
-            <SatkerBannerSection
-              banners={appState.satkerBanners || DEFAULT_APP_STATE.satkerBanners || []}
-              satkerList={appState.satkerList}
-              adminPin={appState.branding.adminPin}
-              isAdminUnlocked={isAdminUnlocked}
-              onUnlockAdmin={() => setIsAdminUnlocked(true)}
-              onAddBanner={handleAddSatkerBanner}
-              onUpdateBanner={handleUpdateSatkerBanner}
-              onDeleteBanner={handleDeleteSatkerBanner}
-              onOpenAdminBannerTab={() => handleOpenAdminTab(3)}
-            />
+            <ViewportLazySection
+              sectionId="spanduk-satker"
+              label="Galeri Spanduk & Banner Satker"
+              fallbackMinHeight={640}
+              forceMount={forcedSectionId === 'spanduk-satker'}
+            >
+              <SatkerBannerSection
+                banners={appState.satkerBanners || DEFAULT_APP_STATE.satkerBanners || []}
+                satkerList={appState.satkerList}
+                adminPin={appState.branding.adminPin}
+                isAdminUnlocked={isAdminUnlocked}
+                onUnlockAdmin={() => setIsAdminUnlocked(true)}
+                onAddBanner={handleAddSatkerBanner}
+                onUpdateBanner={handleUpdateSatkerBanner}
+                onDeleteBanner={handleDeleteSatkerBanner}
+                onOpenAdminBannerTab={() => handleOpenAdminTab(3)}
+              />
+            </ViewportLazySection>
 
             {/* 7. Jalan Sehat Kerukunan QR Coupon Generator, Lucky Draw Spinner & Twibbon */}
-            <JalanSehatTwibbonSection
-              branding={appState.branding}
-              satkerList={appState.satkerList}
-              coupons={appState.coupons}
-              onAddCoupon={handleAddCoupon}
-              onMarkCouponWinner={handleMarkCouponWinner}
-              onUpdateCoupon={handleUpdateCoupon}
-              onDeleteCoupon={handleDeleteCoupon}
-            />
+            <ViewportLazySection
+              sectionId="jalan-sehat"
+              label="Kupon Jalan Sehat & Twibbon"
+              fallbackMinHeight={740}
+              forceMount={forcedSectionId === 'jalan-sehat'}
+            >
+              <JalanSehatTwibbonSection
+                branding={appState.branding}
+                satkerList={appState.satkerList}
+                coupons={appState.coupons}
+                onAddCoupon={handleAddCoupon}
+                onMarkCouponWinner={handleMarkCouponWinner}
+                onUpdateCoupon={handleUpdateCoupon}
+                onDeleteCoupon={handleDeleteCoupon}
+              />
+            </ViewportLazySection>
 
             {/* 8. Kotak Saran, Aspirasi & Wall of Harmony */}
-            <WallOfHarmonySection
-              messages={appState.messages}
-              satkerList={appState.satkerList}
-              adminPin={appState.branding.adminPin}
-              isAdminUnlocked={isAdminUnlocked}
-              onUnlockAdmin={() => setIsAdminUnlocked(true)}
-              onAddMessage={handleAddHarmonyMessage}
-              onUpdateMessage={handleUpdateHarmonyMessage}
-              onDeleteMessage={handleDeleteHarmonyMessage}
-            />
+            <ViewportLazySection
+              sectionId="aspirasi-ucapan"
+              label="Kotak Aspirasi & Ucapan"
+              fallbackMinHeight={560}
+              forceMount={forcedSectionId === 'aspirasi-ucapan'}
+            >
+              <WallOfHarmonySection
+                messages={appState.messages}
+                satkerList={appState.satkerList}
+                adminPin={appState.branding.adminPin}
+                isAdminUnlocked={isAdminUnlocked}
+                onUnlockAdmin={() => setIsAdminUnlocked(true)}
+                onAddMessage={handleAddHarmonyMessage}
+                onUpdateMessage={handleUpdateHarmonyMessage}
+                onDeleteMessage={handleDeleteHarmonyMessage}
+              />
+            </ViewportLazySection>
           </>
         )}
       </main>

@@ -136,7 +136,7 @@ export const ScheduleBaksosSection: React.FC<ScheduleBaksosSectionProps> = ({
                           onClick={() => onFocusVenueOnMap(item.lokasiId)}
                           className="text-left text-slate-200 hover:text-amber-300 underline decoration-emerald-600 underline-offset-4 cursor-pointer"
                         >
-                          {item.lokasiNama} (Lihat di Peta 3D)
+                          {item.lokasiNama} (Lihat di Peta GPS)
                         </button>
                       </div>
 

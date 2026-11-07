@@ -136,13 +136,13 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
   const [newSchCatatan, setNewSchCatatan] = useState('');
   const [editingSchId, setEditingSchId] = useState<string | null>(null);
 
-  // Tab 2: New Venue State
+  // Tab 2: New GPS Coordinate / Venue State
   const [newVenueNama, setNewVenueNama] = useState('');
+  const [newVenueKategori, setNewVenueKategori] = useState('Titik Start / Finish Jalan Santai');
   const [newVenueAlamat, setNewVenueAlamat] = useState('Ampana, Kab. Tojo Una-Una');
   const [newVenueGps, setNewVenueGps] = useState('-0.9125845029778236, 121.58667527394272');
-  const [newVenueX, setNewVenueX] = useState<number>(0);
-  const [newVenueZ, setNewVenueZ] = useState<number>(0);
-  const [newVenueArch, setNewVenueArch] = useState<VenueArchetype>('aula_kerukunan');
+  const [newVenueKapasitas, setNewVenueKapasitas] = useState('Kumpul 06:00 WITA · Start 06:30 WITA');
+  const [newVenueDeskripsi, setNewVenueDeskripsi] = useState('');
   const [newVenueMaps, setNewVenueMaps] = useState(
     'https://www.google.com/maps?q=-0.9125845029778236,121.58667527394272'
   );
@@ -414,24 +414,25 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
     const v: VenueLocation = {
       id: `venue-${Date.now()}`,
       nama: newVenueNama.trim(),
-      alamat: newVenueAlamat.trim(),
-      koordinatX: Number(newVenueX) || 0,
-      koordinatZ: Number(newVenueZ) || 0,
+      kategoriTitik: newVenueKategori.trim() || 'Titik Lokasi Kegiatan',
+      alamat: newVenueAlamat.trim() || 'Ampana, Kab. Tojo Una-Una',
       latitude: parsedLat,
       longitude: parsedLng,
       koordinatGps: cleanGps,
-      archetype: newVenueArch,
       googleMapsUrl:
         newVenueMaps.trim() || `https://www.google.com/maps?q=${parsedLat},${parsedLng}`,
-      deskripsi: 'Titik pelaksanaan kegiatan resmi HAB ke-81 Kemenag Tojo Una-Una.',
-      kapasitas: '500 Peserta',
+      deskripsi:
+        newVenueDeskripsi.trim() ||
+        'Titik pelaksanaan kegiatan resmi HAB ke-81 Kemenag Tojo Una-Una.',
+      kapasitas: newVenueKapasitas.trim() || '500 Peserta',
     };
     onUpdateState((prev) => ({
       ...prev,
       venues: [...prev.venues, v],
     }));
     setNewVenueNama('');
-    notify(`Pin Lokasi 3D "${v.nama}" (GPS: ${cleanGps}) berhasil ditambahkan ke Peta Interaktif.`);
+    setNewVenueDeskripsi('');
+    notify(`Titik Koordinat GPS "${v.nama}" (${cleanGps}) berhasil ditambahkan ke Peta Satelit.`);
   };
 
   const handleUpdateVenue = (id: string, partial: Partial<VenueLocation>) => {
@@ -810,7 +811,7 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                 Otorisasi Panitia HAB ke-81 Kemenag Touna
               </h3>
               <p className="text-xs text-slate-300">
-                Masukkan Kode PIN Rahasia Panitia untuk mengelola Cabang Lomba, Jadwal Acara, Pin Peta 3D, Satker, Galeri Video YouTube, serta Branding Resmi HAB ke-81.
+                Masukkan Kode PIN Rahasia Panitia untuk mengelola Cabang Lomba, Jadwal Acara, Titik Koordinat Peta GPS Satelit, Satker, Galeri Video YouTube, serta Branding Resmi HAB ke-81.
               </p>
             </div>
 
@@ -873,7 +874,7 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
             >
               {[
                 '1. Cabang Lomba, Skor & Medali (Edit/Hapus)',
-                '2. Jadwal, Peta 3D & Baksos (Edit/Hapus)',
+                '2. Jadwal, Titik Koordinat GPS & Baksos (Edit/Hapus)',
                 '3. Master Satker & Pendaftar (Edit/Hapus)',
                 '4. Video, Spanduk Satker, Kupon & Ucapan',
                 '5. Branding Logo HAB-81 & JSON GitHub',
@@ -1696,19 +1697,26 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
 
                   {/* Add & Edit/Delete 3D Venue Pin & Baksos Tracker */}
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-4 border-t border-emerald-800">
-                    {/* Venues CRUD */}
+                    {/* Venues / GPS Checkpoints CRUD */}
                     <div className="bg-[#021b15] border border-emerald-800 rounded-xl p-4 space-y-4">
                       <form onSubmit={handleAddVenue} className="space-y-3">
                         <h4 className="text-xs font-bold text-amber-300">
-                          + Tambah & Kelola Pin Lokasi Peta 2.5D & GPS ({appState.venues.length})
+                          + Tambah & Kelola Titik Koordinat Peta GPS Satelit ({appState.venues.length})
                         </h4>
                         <div className="grid grid-cols-2 gap-2">
                           <input
                             type="text"
                             value={newVenueNama}
                             onChange={(e) => setNewVenueNama(e.target.value)}
-                            placeholder="Nama Venue / Lokasi *"
+                            placeholder="Nama Titik / Lokasi (mis. Start Jalan Santai) *"
                             className="col-span-2 px-3 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
+                          />
+                          <input
+                            type="text"
+                            value={newVenueKategori}
+                            onChange={(e) => setNewVenueKategori(e.target.value)}
+                            placeholder="Kategori Titik (mis. Titik Start / Finish Jalan Santai)"
+                            className="col-span-2 px-3 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-amber-200"
                           />
                           <input
                             type="text"
@@ -1722,52 +1730,40 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                               }
                             }}
                             placeholder="Koordinat GPS (Lat, Lng) mis. -0.9125845029778236, 121.58667527394272"
-                            className="col-span-2 px-3 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-amber-200 font-mono-tabular"
+                            className="col-span-2 px-3 py-1.5 rounded bg-[#03251c] border border-amber-400/60 text-xs text-amber-300 font-mono-tabular"
                           />
-                          <input
-                            type="number"
-                            value={newVenueX}
-                            onChange={(e) => setNewVenueX(Number(e.target.value))}
-                            placeholder="Koordinat X (-30 s/d 28)"
-                            className="px-3 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
-                          />
-                          <input
-                            type="number"
-                            value={newVenueZ}
-                            onChange={(e) => setNewVenueZ(Number(e.target.value))}
-                            placeholder="Koordinat Z (-16 s/d 14)"
-                            className="px-3 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
-                          />
-                          <select
-                            value={newVenueArch}
-                            onChange={(e) => setNewVenueArch(e.target.value as VenueArchetype)}
-                            className="px-3 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
-                          >
-                            <option value="kantor_kemenag">Gedung Kantor Kemenag</option>
-                            <option value="lapangan_utama">Lapangan Terbuka</option>
-                            <option value="gor_olahraga">GOR Olahraga</option>
-                            <option value="masjid_agung">Masjid Agung</option>
-                            <option value="aula_kerukunan">Aula Kerukunan</option>
-                            <option value="pelabuhan_kepulauan">Zona Kepulauan</option>
-                          </select>
                           <input
                             type="text"
-                            value={newVenueMaps}
-                            onChange={(e) => setNewVenueMaps(e.target.value)}
-                            placeholder="Link Google Maps"
+                            value={newVenueAlamat}
+                            onChange={(e) => setNewVenueAlamat(e.target.value)}
+                            placeholder="Alamat / Patokan Lokasi"
                             className="px-3 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
+                          />
+                          <input
+                            type="text"
+                            value={newVenueKapasitas}
+                            onChange={(e) => setNewVenueKapasitas(e.target.value)}
+                            placeholder="Waktu Kumpul / Kapasitas (mis. Start 06:30 WITA)"
+                            className="px-3 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
+                          />
+                          <input
+                            type="text"
+                            value={newVenueDeskripsi}
+                            onChange={(e) => setNewVenueDeskripsi(e.target.value)}
+                            placeholder="Deskripsi singkat kegiatan di titik ini"
+                            className="col-span-2 px-3 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
                           />
                         </div>
                         <button
                           type="submit"
                           className="w-full py-2 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs cursor-pointer"
                         >
-                          + Tambahkan Pin ke Peta 2.5D & GPS
+                          + Tambahkan Titik Koordinat ke Peta GPS Satelit
                         </button>
                       </form>
 
                       {/* Existing Venues Edit/Delete */}
-                      <div className="space-y-2 max-h-56 overflow-y-auto pr-1 pt-2 border-t border-emerald-800/70">
+                      <div className="space-y-2 max-h-64 overflow-y-auto pr-1 pt-2 border-t border-emerald-800/70">
                         {appState.venues.map((v) => (
                           <div
                             key={v.id}
@@ -1778,13 +1774,14 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                                 type="text"
                                 value={v.nama}
                                 onChange={(e) => handleUpdateVenue(v.id, { nama: e.target.value })}
+                                placeholder="Nama Titik Lokasi"
                                 className="flex-1 px-2 py-1 rounded bg-[#021b15] border border-emerald-700 text-white font-bold text-xs"
                               />
                               <button
                                 type="button"
                                 onClick={() => handleDeleteVenue(v.id)}
                                 className="p-1.5 rounded bg-rose-950 text-rose-300 hover:bg-rose-900 cursor-pointer"
-                                title="Hapus Pin Lokasi"
+                                title="Hapus Titik Koordinat"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
@@ -1792,12 +1789,12 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                             <div className="grid grid-cols-2 gap-1.5">
                               <input
                                 type="text"
-                                value={v.alamat}
+                                value={v.kategoriTitik || ''}
                                 onChange={(e) =>
-                                  handleUpdateVenue(v.id, { alamat: e.target.value })
+                                  handleUpdateVenue(v.id, { kategoriTitik: e.target.value })
                                 }
-                                placeholder="Alamat"
-                                className="px-2 py-1 rounded bg-[#021b15] border border-emerald-800 text-[11px] text-slate-200"
+                                placeholder="Kategori Titik (mis. Start Jalan Santai)"
+                                className="px-2 py-1 rounded bg-[#021b15] border border-emerald-800 text-[11px] text-amber-200"
                               />
                               <input
                                 type="text"
@@ -1806,7 +1803,34 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                                   handleUpdateVenue(v.id, { koordinatGps: e.target.value })
                                 }
                                 placeholder="Lat, Lng GPS"
-                                className="px-2 py-1 rounded bg-[#021b15] border border-emerald-800 text-[11px] text-amber-300 font-mono-tabular"
+                                className="px-2 py-1 rounded bg-[#021b15] border border-amber-400/50 text-[11px] text-amber-300 font-mono-tabular"
+                              />
+                              <input
+                                type="text"
+                                value={v.alamat}
+                                onChange={(e) =>
+                                  handleUpdateVenue(v.id, { alamat: e.target.value })
+                                }
+                                placeholder="Alamat / Patokan"
+                                className="px-2 py-1 rounded bg-[#021b15] border border-emerald-800 text-[11px] text-slate-200"
+                              />
+                              <input
+                                type="text"
+                                value={v.kapasitas}
+                                onChange={(e) =>
+                                  handleUpdateVenue(v.id, { kapasitas: e.target.value })
+                                }
+                                placeholder="Waktu Kumpul / Kapasitas"
+                                className="px-2 py-1 rounded bg-[#021b15] border border-emerald-800 text-[11px] text-slate-200"
+                              />
+                              <input
+                                type="text"
+                                value={v.deskripsi}
+                                onChange={(e) =>
+                                  handleUpdateVenue(v.id, { deskripsi: e.target.value })
+                                }
+                                placeholder="Deskripsi kegiatan"
+                                className="col-span-2 px-2 py-1 rounded bg-[#021b15] border border-emerald-800 text-[11px] text-slate-300"
                               />
                             </div>
                           </div>

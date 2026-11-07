@@ -94,13 +94,14 @@ export type VenueArchetype =
 export interface VenueLocation {
   id: string;
   nama: string;
+  kategoriTitik?: string;
   alamat: string;
-  koordinatX: number; // -35 to 35 on 2.5D map plane
-  koordinatZ: number; // -25 to 25 on 2.5D map plane
+  koordinatX?: number;
+  koordinatZ?: number;
   latitude?: number;
   longitude?: number;
   koordinatGps?: string;
-  archetype: VenueArchetype;
+  archetype?: VenueArchetype;
   googleMapsUrl: string;
   deskripsi: string;
   kapasitas: string;

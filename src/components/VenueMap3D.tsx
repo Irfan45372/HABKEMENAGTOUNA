@@ -1,8 +1,23 @@
-import React, { useEffect, useRef, useState } from 'react';
-import * as THREE from 'three';
-import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { Competition, ScheduleEvent, VenueArchetype, VenueLocation } from '../types/hab';
-import { Calendar, Compass, ExternalLink, MapPin, Navigation, Trophy, Users } from 'lucide-react';
+import React, { useState } from 'react';
+import { Competition, ScheduleEvent, VenueLocation } from '../types/hab';
+import { buildDeepLink, shareToWhatsAppWithFullImage } from '../utils/shareUtils';
+import {
+  Calendar,
+  Check,
+  Compass,
+  Edit3,
+  ExternalLink,
+  Globe,
+  LocateFixed,
+  Lock,
+  MapPin,
+  Navigation,
+  Plus,
+  Settings,
+  Share2,
+  Trash2,
+  Trophy,
+} from 'lucide-react';
 
 interface VenueMap3DProps {
   venues: VenueLocation[];
@@ -11,204 +26,67 @@ interface VenueMap3DProps {
   selectedVenueId: string;
   onSelectVenue: (venueId: string) => void;
   onJumpToRegister: (competitionId: string) => void;
+  adminPin?: string;
+  isAdminUnlocked?: boolean;
+  onUnlockAdmin?: () => void;
+  onAddVenue?: (venue: VenueLocation) => void;
+  onUpdateVenue?: (id: string, partial: Partial<VenueLocation>) => void;
+  onDeleteVenue?: (id: string) => void;
+  onOpenAdminMapTab?: () => void;
 }
 
-const _raycaster = new THREE.Raycaster();
-const _pointer = new THREE.Vector2();
-const _treeDummy = new THREE.Object3D();
+const KATEGORI_TITIK_OPTIONS = [
+  'Titik Start / Finish Jalan Santai',
+  'Pusat Upacara & Sekretariat Panitia',
+  'Arena Lomba & Olahraga Porseni',
+  'Lokasi Bakti Sosial & Lomba Seni',
+  'Lokasi Kegiatan Keagamaan & Baksos',
+  'Titik Kumpul Kontingen / Satker',
+  'Posko Kesehatan / Konsumsi / Lainnya',
+];
 
 /**
- * Builds a composite 5-8 part procedural 3D architectural landmark + interactive beacon pin
- * grounded at bottom-center (y = 0) with a soft radial contact shadow.
+ * Extracts "lat, lng" from either a raw coordinate string or a pasted Google Maps URL.
  */
-function buildVenueLandmarkGroup(
-  venue: VenueLocation,
-  isSelected: boolean,
-  contactShadowTex: THREE.CanvasTexture
-): { root: THREE.Group; hitProxy: THREE.Mesh; pinBeacon: THREE.Group } {
-  const root = new THREE.Group();
-  root.position.set(venue.koordinatX, 0.35, venue.koordinatZ);
+function parseCoordinatesInput(raw: string): {
+  lat: number;
+  lng: number;
+  cleanGps: string;
+} | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
 
-  // Soft radial contact shadow disc at ground level (y = 0.02)
-  const shadowMesh = new THREE.Mesh(
-    new THREE.CircleGeometry(3.4, 24).rotateX(-Math.PI / 2),
-    new THREE.MeshBasicMaterial({
-      map: contactShadowTex,
-      transparent: true,
-      depthWrite: false,
-      opacity: isSelected ? 0.65 : 0.4,
-    })
-  );
-  shadowMesh.position.y = 0.02;
-  root.add(shadowMesh);
-
-  // Shared materials with varied roughness/metalness (>= 0.25 contrast)
-  const plinthMat = new THREE.MeshStandardMaterial({
-    color: isSelected ? 0x059669 : 0x064e3b,
-    roughness: 0.78,
-    metalness: 0.15,
-  });
-  const wallMat = new THREE.MeshStandardMaterial({
-    color: 0xf8fafc,
-    roughness: 0.55,
-    metalness: 0.1,
-  });
-  const roofMat = new THREE.MeshStandardMaterial({
-    color: isSelected ? 0xfbbf24 : 0x047857,
-    roughness: 0.28,
-    metalness: 0.65,
-  });
-  const goldAccentMat = new THREE.MeshPhysicalMaterial({
-    color: 0xd4af37,
-    roughness: 0.2,
-    metalness: 0.9,
-    clearcoat: 0.5,
-  });
-
-  // Part 1: Tiered Foundation Plinth
-  const basePlinth = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.36, 3.2), plinthMat);
-  basePlinth.position.y = 0.18;
-  root.add(basePlinth);
-
-  const arch: VenueArchetype = venue.archetype || 'kantor_kemenag';
-
-  if (arch === 'kantor_kemenag') {
-    // Main office block + twin wings + traditional Limas roof + ceremonial flagpole
-    const mainHall = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.35, 1.8), wallMat);
-    mainHall.position.set(0, 1.03, -0.2);
-    root.add(mainHall);
-
-    const portico = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.15, 0.7), wallMat);
-    portico.position.set(0, 0.93, 0.9);
-    root.add(portico);
-
-    const mainRoof = new THREE.Mesh(new THREE.ConeGeometry(2.2, 1.1, 4), roofMat);
-    mainRoof.rotation.y = Math.PI / 4;
-    mainRoof.position.set(0, 2.25, -0.2);
-    root.add(mainRoof);
-
-    // Flagpole in front courtyard
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 2.2, 8), goldAccentMat);
-    pole.position.set(1.1, 1.4, 1.1);
-    root.add(pole);
-  } else if (arch === 'masjid_agung') {
-    // Sanctuary cube + tiered base + golden onion dome + tall minaret
-    const sanctuary = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.4, 2.4), wallMat);
-    sanctuary.position.set(-0.2, 1.06, 0);
-    root.add(sanctuary);
-
-    const domeDrum = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 1.05, 0.35, 24), plinthMat);
-    domeDrum.position.set(-0.2, 1.92, 0);
-    root.add(domeDrum);
-
-    const dome = new THREE.Mesh(
-      new THREE.SphereGeometry(0.92, 24, 16, 0, Math.PI * 2, 0, Math.PI * 0.65),
-      goldAccentMat
-    );
-    dome.position.set(-0.2, 2.05, 0);
-    root.add(dome);
-
-    const minaret = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.24, 2.8, 12), wallMat);
-    minaret.position.set(1.25, 1.75, 1.0);
-    root.add(minaret);
-
-    const minaretSpire = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.65, 12), goldAccentMat);
-    minaretSpire.position.set(1.25, 3.45, 1.0);
-    root.add(minaretSpire);
-  } else if (arch === 'gor_olahraga') {
-    // Curved barrel vault stadium roof + side buttresses
-    const arenaBody = new THREE.Mesh(new THREE.BoxGeometry(3.0, 1.2, 2.2), wallMat);
-    arenaBody.position.set(0, 0.96, 0);
-    root.add(arenaBody);
-
-    const vaultRoof = new THREE.Mesh(
-      new THREE.CylinderGeometry(1.15, 1.15, 3.1, 20, 1, false, 0, Math.PI),
-      roofMat
-    );
-    vaultRoof.rotation.z = Math.PI / 2;
-    vaultRoof.position.set(0, 1.56, 0);
-    root.add(vaultRoof);
-
-    const entranceArch = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.8, 0.5), goldAccentMat);
-    entranceArch.position.set(0, 0.76, 1.2);
-    root.add(entranceArch);
-  } else if (arch === 'lapangan_utama') {
-    // Open coastal festival plaza + main stage arch + twin lighting towers
-    const fieldGreen = new THREE.Mesh(
-      new THREE.BoxGeometry(3.1, 0.12, 2.6),
-      new THREE.MeshStandardMaterial({ color: 0x10b981, roughness: 0.65, metalness: 0.1 })
-    );
-    fieldGreen.position.set(0, 0.42, 0);
-    root.add(fieldGreen);
-
-    const stageBackdrop = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.25, 0.45), roofMat);
-    stageBackdrop.position.set(0, 1.05, -0.85);
-    root.add(stageBackdrop);
-
-    const stageArch = new THREE.Mesh(
-      new THREE.TorusGeometry(0.95, 0.09, 12, 28, Math.PI),
-      goldAccentMat
-    );
-    stageArch.position.set(0, 0.8, -0.6);
-    root.add(stageArch);
-  } else {
-    // Aula Kerukunan / Kepulauan Harbor Pavilion
-    const pavilion = new THREE.Mesh(new THREE.BoxGeometry(2.5, 1.25, 2.0), wallMat);
-    pavilion.position.set(0, 0.98, 0);
-    root.add(pavilion);
-
-    const hipRoof = new THREE.Mesh(new THREE.ConeGeometry(1.95, 0.95, 4), roofMat);
-    hipRoof.rotation.y = Math.PI / 4;
-    hipRoof.position.set(0, 2.08, 0);
-    root.add(hipRoof);
-
-    const spire = new THREE.Mesh(new THREE.OctahedronGeometry(0.28, 0), goldAccentMat);
-    spire.position.set(0, 2.75, 0);
-    root.add(spire);
+  // Check @lat,lng in Google Maps URLs
+  const atMatch = trimmed.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+  if (atMatch) {
+    const lat = Number(atMatch[1]);
+    const lng = Number(atMatch[2]);
+    if (!Number.isNaN(lat) && !Number.isNaN(lng)) {
+      return { lat, lng, cleanGps: `${lat}, ${lng}` };
+    }
   }
 
-  // Elevated Interactive Pin Beacon above the landmark
-  const pinBeacon = new THREE.Group();
-  pinBeacon.position.set(0, 3.85, 0);
+  // Check q=lat,lng or query=lat,lng
+  const qMatch = trimmed.match(/(?:q|query|ll)=(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/);
+  if (qMatch) {
+    const lat = Number(qMatch[1]);
+    const lng = Number(qMatch[2]);
+    if (!Number.isNaN(lat) && !Number.isNaN(lng)) {
+      return { lat, lng, cleanGps: `${lat}, ${lng}` };
+    }
+  }
 
-  const pinStem = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.06, 0.02, 1.1, 12),
-    goldAccentMat
-  );
-  pinStem.position.y = -0.45;
-  pinBeacon.add(pinStem);
+  // Standard "lat, lng"
+  const directMatch = trimmed.match(/(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/);
+  if (directMatch) {
+    const lat = Number(directMatch[1]);
+    const lng = Number(directMatch[2]);
+    if (!Number.isNaN(lat) && !Number.isNaN(lng)) {
+      return { lat, lng, cleanGps: `${lat}, ${lng}` };
+    }
+  }
 
-  const pinHead = new THREE.Mesh(
-    new THREE.OctahedronGeometry(isSelected ? 0.58 : 0.42, 0),
-    new THREE.MeshPhysicalMaterial({
-      color: isSelected ? 0xfbbf24 : 0x10b981,
-      emissive: isSelected ? 0xd97706 : 0x047857,
-      emissiveIntensity: isSelected ? 0.55 : 0.25,
-      metalness: 0.85,
-      roughness: 0.15,
-    })
-  );
-  pinBeacon.add(pinHead);
-
-  const haloRing = new THREE.Mesh(
-    new THREE.TorusGeometry(isSelected ? 0.82 : 0.58, 0.04, 12, 32),
-    goldAccentMat
-  );
-  haloRing.rotation.x = Math.PI / 2;
-  pinBeacon.add(haloRing);
-
-  root.add(pinBeacon);
-
-  // Invisible simplified proxy collision box for fast, reliable raycasting
-  const hitProxy = new THREE.Mesh(
-    new THREE.BoxGeometry(4.2, 5.2, 4.2),
-    new THREE.MeshBasicMaterial({ visible: false })
-  );
-  hitProxy.position.y = 2.4;
-  hitProxy.userData = { venueId: venue.id };
-  root.add(hitProxy);
-
-  return { root, hitProxy, pinBeacon };
+  return null;
 }
 
 export const VenueMap3D: React.FC<VenueMap3DProps> = ({
@@ -218,13 +96,53 @@ export const VenueMap3D: React.FC<VenueMap3DProps> = ({
   selectedVenueId,
   onSelectVenue,
   onJumpToRegister,
+  adminPin = '812027',
+  isAdminUnlocked = false,
+  onUnlockAdmin,
+  onAddVenue,
+  onUpdateVenue,
+  onDeleteVenue,
+  onOpenAdminMapTab,
 }) => {
-  const mapMountRef = useRef<HTMLDivElement | null>(null);
-  const [hoveredVenueId, setHoveredVenueId] = useState<string | null>(null);
-  const [mapViewMode, setMapViewMode] = useState<'3d' | 'gps'>('3d');
+  // Satellite ('h' = Google Satellite Hybrid with road labels) vs Standard ('m' = Google Road Map)
+  const [mapLayerType, setMapLayerType] = useState<'h' | 'm'>('h');
+  const [mapZoom, setMapZoom] = useState<number>(17);
 
-  const activeVenue =
-    venues.find((v) => v.id === selectedVenueId) || venues[0] || null;
+  // Admin Inline Manage States
+  const [showPinPrompt, setShowPinPrompt] = useState(false);
+  const [pinInput, setPinInput] = useState('');
+  const [pinError, setPinError] = useState('');
+  const [isManageOpen, setIsManageOpen] = useState(false);
+  const [noticeMsg, setNoticeMsg] = useState('');
+
+  // New Coordinate Point Form States
+  const [newNama, setNewNama] = useState('');
+  const [newKategori, setNewKategori] = useState<string>(KATEGORI_TITIK_OPTIONS[0]);
+  const [newGpsInput, setNewGpsInput] = useState('-0.9125845029778236, 121.58667527394272');
+  const [newAlamat, setNewAlamat] = useState('Ampana, Kab. Tojo Una-Una');
+  const [newKapasitas, setNewKapasitas] = useState('Kumpul 06:00 WITA · Start 06:30 WITA');
+  const [newDeskripsi, setNewDeskripsi] = useState('');
+  const [locatingGps, setLocatingGps] = useState(false);
+
+  // Editing Existing Venue State
+  const [editingVenueId, setEditingVenueId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<{
+    nama: string;
+    kategoriTitik: string;
+    koordinatGps: string;
+    alamat: string;
+    kapasitas: string;
+    deskripsi: string;
+  }>({
+    nama: '',
+    kategoriTitik: '',
+    koordinatGps: '',
+    alamat: '',
+    kapasitas: '',
+    deskripsi: '',
+  });
+
+  const activeVenue = venues.find((v) => v.id === selectedVenueId) || venues[0] || null;
 
   const activeGpsString =
     activeVenue?.koordinatGps ||
@@ -232,15 +150,15 @@ export const VenueMap3D: React.FC<VenueMap3DProps> = ({
       ? `${activeVenue.latitude}, ${activeVenue.longitude}`
       : '-0.9125845029778236, 121.58667527394272');
 
-  const activeGpsQuery =
-    typeof activeVenue?.latitude === 'number' && typeof activeVenue?.longitude === 'number'
-      ? `${activeVenue.latitude},${activeVenue.longitude}`
-      : activeVenue?.koordinatGps?.replace(/\s+/g, '') ||
-        '-0.9125845029778236,121.58667527394272';
+  const parsedActiveCoords = parseCoordinatesInput(activeGpsString);
+  const activeGpsQuery = parsedActiveCoords
+    ? `${parsedActiveCoords.lat},${parsedActiveCoords.lng}`
+    : activeVenue?.koordinatGps?.trim() ||
+      (typeof activeVenue?.latitude === 'number' && typeof activeVenue?.longitude === 'number'
+        ? `${activeVenue.latitude},${activeVenue.longitude}`
+        : '-0.9125845029778236,121.58667527394272');
 
-  const venueCompetitions = competitions.filter(
-    (c) => c.lokasiId === activeVenue?.id
-  );
+  const venueCompetitions = competitions.filter((c) => c.lokasiId === activeVenue?.id);
   const venueSchedules = schedules.filter(
     (s) =>
       s.lokasiId === activeVenue?.id ||
@@ -248,517 +166,686 @@ export const VenueMap3D: React.FC<VenueMap3DProps> = ({
         s.lokasiNama.toLowerCase().includes(activeVenue.nama.toLowerCase().slice(0, 12)))
   );
 
-  // Keep latest callbacks & props in ref for the Three.js scene
-  const sceneSyncRef = useRef<{
-    rebuildPins?: (vList: VenueLocation[], selId: string) => void;
-    focusVenue?: (v: VenueLocation | null) => void;
-    onSelectVenue: (id: string) => void;
-  }>({
-    onSelectVenue,
-  });
+  const showNotice = (msg: string) => {
+    setNoticeMsg(msg);
+    window.setTimeout(() => setNoticeMsg(''), 3500);
+  };
 
-  useEffect(() => {
-    sceneSyncRef.current.onSelectVenue = onSelectVenue;
-  }, [onSelectVenue]);
+  const handleToggleAdminPanel = () => {
+    if (isAdminUnlocked) {
+      setIsManageOpen((prev) => !prev);
+      setShowPinPrompt(false);
+    } else {
+      setShowPinPrompt((prev) => !prev);
+      setPinError('');
+    }
+  };
 
-  useEffect(() => {
-    sceneSyncRef.current.rebuildPins?.(venues, selectedVenueId);
-    const found = venues.find((v) => v.id === selectedVenueId) || null;
-    sceneSyncRef.current.focusVenue?.(found);
-  }, [venues, selectedVenueId]);
+  const handleVerifyPin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (pinInput.trim() === adminPin) {
+      onUnlockAdmin?.();
+      setShowPinPrompt(false);
+      setIsManageOpen(true);
+      setPinInput('');
+      setPinError('');
+    } else {
+      setPinError('PIN Admin tidak sesuai.');
+    }
+  };
 
-  useEffect(() => {
-    const container = mapMountRef.current;
-    if (!container) return;
-
-    const isSoftwareGl = (() => {
-      try {
-        const gl = document.createElement('canvas').getContext('webgl2');
-        if (!gl) return true;
-        const ext = gl.getExtension('WEBGL_debug_renderer_info');
-        const param = ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER;
-        const gpu = String(gl.getParameter(param));
-        gl.getExtension('WEBGL_lose_context')?.loseContext();
-        return /SwiftShader|llvmpipe|softpipe|Software|Basic Render/i.test(gpu);
-      } catch {
-        return true;
-      }
-    })();
-
-    const width = container.clientWidth || 800;
-    const height = container.clientHeight || 500;
-
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x03221a);
-    scene.fog = new THREE.FogExp2(0x03221a, 0.014);
-
-    // 2.5D Isometric Camera Angle
-    const camera = new THREE.PerspectiveCamera(36, width / height, 0.5, 220);
-    camera.position.set(0, 32, 38);
-    camera.lookAt(0, 0, 0);
-
-    let renderer: THREE.WebGLRenderer;
-    try {
-      renderer = new THREE.WebGLRenderer({
-        antialias: !isSoftwareGl,
-        powerPreference: 'high-performance',
-      });
-    } catch {
+  const handleDetectMyLocation = (target: 'new' | 'edit') => {
+    if (!('geolocation' in navigator)) {
+      showNotice('Browser perangkat ini tidak mendukung sensor geolokasi otomatis.');
       return;
     }
-
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.1;
-    renderer.setPixelRatio(isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, 2));
-    renderer.setSize(width, height);
-    renderer.shadowMap.enabled = !isSoftwareGl;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-
-    container.innerHTML = '';
-    container.appendChild(renderer.domElement);
-
-    // Studio Environment Map
-    const pmrem = new THREE.PMREMGenerator(renderer);
-    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    pmrem.dispose();
-
-    // Warm/Cool Lighting Rig
-    const hemiLight = new THREE.HemisphereLight(0xa7f3d0, 0x022c22, 0.95);
-    hemiLight.position.set(0, 40, 0);
-    scene.add(hemiLight);
-
-    const sunLight = new THREE.DirectionalLight(0xfffbeb, 2.2);
-    sunLight.position.set(18, 34, 22);
-    sunLight.castShadow = !isSoftwareGl;
-    sunLight.shadow.camera.left = -35;
-    sunLight.shadow.camera.right = 35;
-    sunLight.shadow.camera.top = 28;
-    sunLight.shadow.camera.bottom = -28;
-    sunLight.shadow.mapSize.set(1024, 1024);
-    sunLight.shadow.bias = -0.0005;
-    scene.add(sunLight);
-
-    // =========================================================================
-    // KABUPATEN TOJO UNA-UNA 2.5D ARCHIPELAGO & MAINLAND TERRAIN
-    // =========================================================================
-    // 1. Teluk Tomini Deep Emerald-Teal Sea Plane
-    const seaGeo = new THREE.PlaneGeometry(160, 120);
-    seaGeo.rotateX(-Math.PI / 2);
-    const seaMat = new THREE.MeshStandardMaterial({
-      color: 0x04392e,
-      roughness: 0.25,
-      metalness: 0.45,
-    });
-    const seaMesh = new THREE.Mesh(seaGeo, seaMat);
-    seaMesh.position.y = -0.15;
-    scene.add(seaMesh);
-
-    // 2. Ampana Mainland Coastal Plateau (Left & Center)
-    const mainlandShape = new THREE.Shape();
-    mainlandShape.moveTo(-34, -18);
-    mainlandShape.lineTo(18, -16);
-    mainlandShape.quadraticCurveTo(22, -4, 12, 12);
-    mainlandShape.quadraticCurveTo(2, 17, -14, 15);
-    mainlandShape.quadraticCurveTo(-30, 14, -34, -2);
-    mainlandShape.closePath();
-
-    const mainlandGeo = new THREE.ExtrudeGeometry(mainlandShape, {
-      depth: 0.45,
-      bevelEnabled: true,
-      bevelThickness: 0.15,
-      bevelSize: 0.25,
-      bevelSegments: 2,
-    });
-    mainlandGeo.rotateX(Math.PI / 2);
-    const landMat = new THREE.MeshStandardMaterial({
-      color: 0x064e3b,
-      roughness: 0.82,
-      metalness: 0.08,
-    });
-    const mainlandMesh = new THREE.Mesh(mainlandGeo, landMat);
-    mainlandMesh.position.y = 0.35;
-    mainlandMesh.receiveShadow = !isSoftwareGl;
-    scene.add(mainlandMesh);
-
-    // 3. Kepulauan Togean / Una-Una / Walea Island Cluster (East/Right)
-    const islandShape = new THREE.Shape();
-    islandShape.moveTo(16, 2);
-    islandShape.quadraticCurveTo(26, 0, 29, 7);
-    islandShape.quadraticCurveTo(27, 14, 19, 12);
-    islandShape.quadraticCurveTo(14, 9, 16, 2);
-
-    const islandGeo = new THREE.ExtrudeGeometry(islandShape, {
-      depth: 0.42,
-      bevelEnabled: true,
-      bevelThickness: 0.12,
-      bevelSize: 0.2,
-      bevelSegments: 2,
-    });
-    islandGeo.rotateX(Math.PI / 2);
-    const islandMesh = new THREE.Mesh(islandGeo, landMat);
-    islandMesh.position.y = 0.35;
-    scene.add(islandMesh);
-
-    // 4. Curved Golden Highway & Sea Ferry Route connecting Ampana & Kepulauan Togean
-    const roadCurve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(-22, 0.42, 9),
-      new THREE.Vector3(-12, 0.42, -4),
-      new THREE.Vector3(-4, 0.42, -11),
-      new THREE.Vector3(14, 0.42, -7),
-      new THREE.Vector3(4, 0.42, 8),
-      new THREE.Vector3(21, 0.42, 6),
-    ]);
-    const roadGeo = new THREE.TubeGeometry(roadCurve, 64, 0.22, 8, false);
-    const roadMat = new THREE.MeshStandardMaterial({
-      color: 0xd4af37,
-      roughness: 0.4,
-      metalness: 0.65,
-    });
-    const roadMesh = new THREE.Mesh(roadGeo, roadMat);
-    scene.add(roadMesh);
-
-    // 5. InstancedMesh of 40 Tropical Coastal Trees across Ampana & Togean
-    const treeCoords: [number, number][] = [
-      [-28, -8], [-26, 2], [-18, -12], [-15, 4], [-8, 11],
-      [-2, -3], [6, -12], [9, 2], [18, -12], [-25, 13],
-      [-19, -2], [-9, -14], [1, 13], [11, -2], [24, 3],
-      [26, 9], [18, 10], [-29, 7], [-14, -9], [7, -4],
-      [-24, -5], [-16, 11], [-6, 5], [3, -8], [15, -1],
-      [22, 11], [-20, 6], [-11, 1], [-1, 8], [12, -11],
-    ];
-    const treeCrownGeo = new THREE.ConeGeometry(0.55, 1.35, 7);
-    const treeCrownMat = new THREE.MeshStandardMaterial({
-      color: 0x10b981,
-      roughness: 0.75,
-      metalness: 0.05,
-    });
-    const treesInstanced = new THREE.InstancedMesh(
-      treeCrownGeo,
-      treeCrownMat,
-      treeCoords.length
-    );
-    const c1 = new THREE.Color(0x10b981);
-    const c2 = new THREE.Color(0x059669);
-    treeCoords.forEach(([tx, tz], idx) => {
-      const scale = 0.85 + ((idx * 17) % 30) / 100;
-      _treeDummy.position.set(tx, 0.35 + 0.65 * scale, tz);
-      _treeDummy.rotation.set(0, idx * 0.8, 0);
-      _treeDummy.scale.setScalar(scale);
-      _treeDummy.updateMatrix();
-      treesInstanced.setMatrixAt(idx, _treeDummy.matrix);
-      treesInstanced.setColorAt(idx, idx % 2 === 0 ? c1 : c2);
-    });
-    treesInstanced.instanceMatrix.needsUpdate = true;
-    if (treesInstanced.instanceColor) treesInstanced.instanceColor.needsUpdate = true;
-    treesInstanced.computeBoundingSphere();
-    scene.add(treesInstanced);
-
-    // Contact shadow texture shared by all landmarks
-    const shadowCanvas = document.createElement('canvas');
-    shadowCanvas.width = 64;
-    shadowCanvas.height = 64;
-    const sCtx = shadowCanvas.getContext('2d')!;
-    const sGrad = sCtx.createRadialGradient(32, 32, 4, 32, 32, 30);
-    sGrad.addColorStop(0, 'rgba(0,0,0,0.65)');
-    sGrad.addColorStop(1, 'rgba(0,0,0,0)');
-    sCtx.fillStyle = sGrad;
-    sCtx.fillRect(0, 0, 64, 64);
-    const contactShadowTex = new THREE.CanvasTexture(shadowCanvas);
-
-    // Dynamic Venue Landmarks Container
-    const landmarksGroup = new THREE.Group();
-    scene.add(landmarksGroup);
-
-    let hitProxies: THREE.Mesh[] = [];
-    let animatedBeacons: THREE.Group[] = [];
-
-    const rebuildPins = (vList: VenueLocation[], selId: string) => {
-      while (landmarksGroup.children.length > 0) {
-        landmarksGroup.remove(landmarksGroup.children[0]);
-      }
-      hitProxies = [];
-      animatedBeacons = [];
-
-      for (const v of vList) {
-        const isSel = v.id === selId;
-        const { root, hitProxy, pinBeacon } = buildVenueLandmarkGroup(
-          v,
-          isSel,
-          contactShadowTex
-        );
-        landmarksGroup.add(root);
-        hitProxies.push(hitProxy);
-        animatedBeacons.push(pinBeacon);
-      }
-    };
-
-    sceneSyncRef.current.rebuildPins = rebuildPins;
-    rebuildPins(venues, selectedVenueId);
-
-    // Smooth camera target focus when a venue is selected
-    const targetLookAt = new THREE.Vector3(0, 0, 0);
-    const currentLookAt = new THREE.Vector3(0, 0, 0);
-    const targetCamPos = new THREE.Vector3(0, 32, 38);
-
-    sceneSyncRef.current.focusVenue = (v: VenueLocation | null) => {
-      if (!v) {
-        targetLookAt.set(0, 0, 0);
-        targetCamPos.set(0, 32, 38);
-      } else {
-        targetLookAt.set(v.koordinatX * 0.45, 0.5, v.koordinatZ * 0.45);
-        targetCamPos.set(v.koordinatX * 0.35, 29, 34 + v.koordinatZ * 0.3);
-      }
-    };
-
-    const initialSel = venues.find((v) => v.id === selectedVenueId) || venues[0] || null;
-    sceneSyncRef.current.focusVenue(initialSel);
-
-    // Raycasting on canvas click & hover
-    const getHitVenueId = (clientX: number, clientY: number): string | null => {
-      const rect = renderer.domElement.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0) return null;
-      _pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
-      _pointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
-      _raycaster.setFromCamera(_pointer, camera);
-      const intersects = _raycaster.intersectObjects(hitProxies, false);
-      if (intersects.length > 0) {
-        return intersects[0].object.userData?.venueId || null;
-      }
-      return null;
-    };
-
-    const onCanvasClick = (e: MouseEvent) => {
-      const hitId = getHitVenueId(e.clientX, e.clientY);
-      if (hitId) {
-        sceneSyncRef.current.onSelectVenue(hitId);
-      }
-    };
-
-    let lastHoverCheck = 0;
-    const onCanvasMove = (e: MouseEvent) => {
-      const now = Date.now();
-      if (now - lastHoverCheck < 60) return;
-      lastHoverCheck = now;
-      const hitId = getHitVenueId(e.clientX, e.clientY);
-      setHoveredVenueId(hitId);
-      renderer.domElement.style.cursor = hitId ? 'pointer' : 'grab';
-    };
-
-    renderer.domElement.addEventListener('click', onCanvasClick);
-    renderer.domElement.addEventListener('mousemove', onCanvasMove);
-
-    const onResize = () => {
-      if (!container) return;
-      const w = container.clientWidth || 800;
-      const h = container.clientHeight || 500;
-      camera.aspect = w / h;
-      camera.updateProjectionMatrix();
-      renderer.setSize(w, h);
-      renderer.render(scene, camera);
-    };
-    window.addEventListener('resize', onResize);
-    const resizeObserver = new ResizeObserver(onResize);
-    resizeObserver.observe(container);
-
-    // Paced Animation Loop
-    const clock = new THREE.Clock();
-    let frameId = 0;
-    let isDisposed = false;
-
-    function afterDraw(cb: () => void) {
-      const gl = renderer.getContext() as WebGL2RenderingContext;
-      if (!gl || typeof gl.fenceSync !== 'function') {
-        frameId = window.setTimeout(cb, 80);
-        return;
-      }
-      const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
-      gl.flush();
-      const poll = () => {
-        if (isDisposed) return;
-        const state = sync && gl.getSyncParameter(sync, gl.SYNC_STATUS);
-        if (state === gl.UNSIGNALED) {
-          frameId = window.setTimeout(poll, 5);
+    setLocatingGps(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocatingGps(false);
+        const coordStr = `${pos.coords.latitude.toFixed(7)}, ${pos.coords.longitude.toFixed(7)}`;
+        if (target === 'new') {
+          setNewGpsInput(coordStr);
         } else {
-          if (sync) gl.deleteSync(sync);
-          frameId = window.setTimeout(cb, 80);
+          setEditForm((prev) => ({ ...prev, koordinatGps: coordStr }));
         }
-      };
-      frameId = window.setTimeout(poll, 5);
-    }
+        showNotice(`Titik GPS berhasil diambil dari lokasi perangkat: ${coordStr}`);
+      },
+      () => {
+        setLocatingGps(false);
+        showNotice('Gagal mengambil GPS otomatis. Pastikan izin lokasi aktif atau ketik manual.');
+      },
+      { enableHighAccuracy: true, timeout: 8000 }
+    );
+  };
 
-    let elapsed = 0;
-    function tick() {
-      if (isDisposed) return;
-      const dt = Math.min(clock.getDelta(), 0.1);
-      elapsed += dt;
+  const handleCreateNewVenue = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newNama.trim() || !onAddVenue) return;
 
-      // Exponentially damp camera position and lookAt target
-      const alpha = 1 - Math.exp(-4.5 * dt);
-      camera.position.lerp(targetCamPos, alpha);
-      currentLookAt.lerp(targetLookAt, alpha);
-      camera.lookAt(currentLookAt);
+    const parsed = parseCoordinatesInput(newGpsInput);
+    const lat = parsed ? parsed.lat : -0.9125845029778236;
+    const lng = parsed ? parsed.lng : 121.58667527394272;
+    const cleanGps = `${lat}, ${lng}`;
 
-      // Gentle rotation & bobbing on venue beacons
-      for (let i = 0; i < animatedBeacons.length; i++) {
-        const b = animatedBeacons[i];
-        b.rotation.y = elapsed * 1.4 + i;
-        b.position.y = 3.85 + Math.sin(elapsed * 2.2 + i) * 0.16;
-      }
-
-      renderer.render(scene, camera);
-
-      if (isSoftwareGl) {
-        afterDraw(tick);
-      } else {
-        frameId = requestAnimationFrame(tick);
-      }
-    }
-
-    tick();
-
-    return () => {
-      isDisposed = true;
-      cancelAnimationFrame(frameId);
-      clearTimeout(frameId);
-      resizeObserver.disconnect();
-      renderer.domElement.removeEventListener('click', onCanvasClick);
-      renderer.domElement.removeEventListener('mousemove', onCanvasMove);
-      window.removeEventListener('resize', onResize);
-      renderer.dispose();
+    const created: VenueLocation = {
+      id: `venue-${Date.now()}`,
+      nama: newNama.trim(),
+      kategoriTitik: newKategori.trim() || 'Titik Lokasi Kegiatan',
+      alamat: newAlamat.trim() || 'Ampana, Kab. Tojo Una-Una',
+      latitude: lat,
+      longitude: lng,
+      koordinatGps: cleanGps,
+      googleMapsUrl: `https://www.google.com/maps?q=${lat},${lng}`,
+      kapasitas: newKapasitas.trim() || 'Terbuka untuk Peserta HAB ke-81',
+      deskripsi:
+        newDeskripsi.trim() ||
+        `Titik lokasi kegiatan ${newNama.trim()} (${newKategori}) pada rangkaian Hari Amal Bakti ke-81 Kemenag Kab. Tojo Una-Una.`,
     };
-  }, []);
+
+    onAddVenue(created);
+    onSelectVenue(created.id);
+    setNewNama('');
+    setNewDeskripsi('');
+    showNotice(`Titik Koordinat "${created.nama}" (${cleanGps}) berhasil ditambahkan & disimpan ke Cloud.`);
+  };
+
+  const handleStartEditVenue = (v: VenueLocation) => {
+    setEditingVenueId(v.id);
+    setEditForm({
+      nama: v.nama,
+      kategoriTitik: v.kategoriTitik || KATEGORI_TITIK_OPTIONS[0],
+      koordinatGps: v.koordinatGps || `${v.latitude ?? -0.9125845}, ${v.longitude ?? 121.5866752}`,
+      alamat: v.alamat,
+      kapasitas: v.kapasitas,
+      deskripsi: v.deskripsi,
+    });
+  };
+
+  const handleSaveEditVenue = (id: string) => {
+    if (!onUpdateVenue || !editForm.nama.trim()) return;
+    const rawGps = editForm.koordinatGps.trim();
+    const parsed = parseCoordinatesInput(rawGps);
+
+    if (parsed) {
+      const cleanGps = `${parsed.lat}, ${parsed.lng}`;
+      onUpdateVenue(id, {
+        nama: editForm.nama.trim(),
+        kategoriTitik: editForm.kategoriTitik.trim() || 'Titik Lokasi Kegiatan',
+        alamat: editForm.alamat.trim(),
+        latitude: parsed.lat,
+        longitude: parsed.lng,
+        koordinatGps: cleanGps,
+        googleMapsUrl: `https://www.google.com/maps?q=${parsed.lat},${parsed.lng}`,
+        kapasitas: editForm.kapasitas.trim(),
+        deskripsi: editForm.deskripsi.trim(),
+      });
+    } else {
+      // Allows Admin to also type a place name / address query if exact coordinates are not known yet
+      const searchQuery = rawGps || `${editForm.nama.trim()}, Ampana, Tojo Una-Una`;
+      onUpdateVenue(id, {
+        nama: editForm.nama.trim(),
+        kategoriTitik: editForm.kategoriTitik.trim() || 'Titik Lokasi Kegiatan',
+        alamat: editForm.alamat.trim(),
+        latitude: undefined,
+        longitude: undefined,
+        koordinatGps: searchQuery,
+        googleMapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+          searchQuery
+        )}`,
+        kapasitas: editForm.kapasitas.trim(),
+        deskripsi: editForm.deskripsi.trim(),
+      });
+    }
+
+    setEditingVenueId(null);
+    showNotice(`Titik Lokasi & Koordinat "${editForm.nama.trim()}" berhasil diperbarui & disimpan ke Cloud.`);
+  };
+
+  const handleShareVenueToWa = async (v: VenueLocation) => {
+    const gpsStr =
+      v.koordinatGps || `${v.latitude ?? -0.9125845029778236}, ${v.longitude ?? 121.58667527394272}`;
+    const mapsLink = `https://www.google.com/maps?q=${encodeURIComponent(gpsStr.replace(/\s+/g, ''))}`;
+    const portalLink = buildDeepLink({ menu: 'peta' });
+
+    const waText =
+      `📍 *TITIK KOORDINAT & LOKASI KEGIATAN HAB KE-81 KEMENAG TOJO UNA-UNA*\n` +
+      `_by HUMAS KEMENTERIAN AGAMA KABUPATEN TOJO UNA UNA_\n\n` +
+      `*${v.nama}*\n` +
+      `• Kategori: ${v.kategoriTitik || 'Titik Pelaksanaan Resmi'}\n` +
+      `• Alamat / Patokan: ${v.alamat}\n` +
+      `• Info Waktu / Kapasitas: ${v.kapasitas}\n` +
+      `• Titik Koordinat GPS: ${gpsStr}\n\n` +
+      `${v.deskripsi}\n\n` +
+      `🗺️ *Buka Titik di Google Maps Satelit:*\n${mapsLink}\n\n` +
+      `🔗 *Portal Resmi HAB ke-81:*\n${portalLink}`;
+
+    await shareToWhatsAppWithFullImage({
+      title: `Lokasi ${v.nama} — HAB ke-81 Kemenag Touna`,
+      waText,
+    });
+  };
+
+  const showAdminManager = isAdminUnlocked && isManageOpen;
 
   return (
     <section
       id="peta-lokasi"
-      aria-label="Peta Interaktif 2.5D Lokasi Acara Kabupaten Tojo Una-Una"
+      aria-label="Peta GPS Satelit & Titik Koordinat Kegiatan Kabupaten Tojo Una-Una"
       className="py-16 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto border-t border-emerald-900/70"
     >
       {/* Section Header */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-6">
         <div>
           <p className="text-xs font-semibold text-amber-300 tracking-wide mb-1">
-            01. Geospasial & Titik Pelaksanaan HAB ke-81
+            01. Peta GPS Satelit & Titik Koordinat Resmi HAB ke-81
           </p>
           <h2 className="font-display text-2xl sm:text-3xl font-bold text-white [text-wrap:balance]">
-            Peta Interaktif 2.5D Lokasi & Venue Kabupaten Tojo Una-Una
+            Peta GPS Satelit & Titik Lokasi Kegiatan Kabupaten Tojo Una-Una
           </h2>
           <p className="text-sm text-slate-300 mt-1.5 max-w-2xl">
-            Klik pin bangunan 3D di atas peta daratan Ampana & Kepulauan Togean atau pilih titik lokasi di bawah untuk melihat jadwal pertandingan, acara aktif, dan rute Google Maps.
+            Pilih titik lokasi di bawah untuk melihat peta satelit GPS secara langsung (termasuk Titik Kumpul & Start Jalan Santai, Kantor Kemenag, GOR, dan lokasi kegiatan lainnya) beserta petunjuk arah Google Maps.
           </p>
         </div>
 
-        {/* Accessible Venue Selector Strip */}
-        <div
-          role="tablist"
-          aria-label="Daftar Lokasi Venue HAB ke-81"
-          className="flex flex-wrap items-center gap-1.5 bg-[#03221a] p-1.5 rounded-xl border border-emerald-800/80"
-        >
-          {venues.map((v) => {
-            const isSelected = v.id === activeVenue?.id;
-            const shortLabel = v.nama.includes('(')
-              ? v.nama.split('(')[0].trim()
-              : v.nama.split('&')[0].trim();
-            return (
-              <button
-                key={v.id}
-                role="tab"
-                aria-selected={isSelected}
-                type="button"
-                onClick={() => onSelectVenue(v.id)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
-                  isSelected
-                    ? 'bg-amber-400 text-slate-950 font-semibold shadow-sm'
-                    : 'text-slate-300 hover:text-white hover:bg-emerald-900/50'
-                }`}
-              >
-                <MapPin className="w-3.5 h-3.5" />
-                <span>{shortLabel}</span>
-              </button>
-            );
-          })}
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={handleToggleAdminPanel}
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer border transition-colors ${
+              showAdminManager
+                ? 'bg-amber-400 text-slate-950 border-amber-300 shadow'
+                : 'bg-[#03251c] hover:bg-emerald-900 text-amber-300 border-amber-400/50'
+            }`}
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>
+              {showAdminManager
+                ? 'Tutup Form Titik Koordinat'
+                : '+ Input / Edit Titik Koordinat (Admin)'}
+            </span>
+          </button>
+
+          {onOpenAdminMapTab && (
+            <button
+              type="button"
+              onClick={onOpenAdminMapTab}
+              className="px-3 py-2 rounded-xl bg-[#021b15] hover:bg-emerald-950 border border-emerald-800 text-emerald-200 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+              title="Buka Pengaturan Lengkap di Panel Admin (Tab 2)"
+            >
+              <Settings className="w-3.5 h-3.5 text-amber-300" />
+              <span className="hidden sm:inline">Panel Admin (Tab 2)</span>
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Main 2-Column Split: Left 2.5D Isometric Canvas, Right Dynamic Venue Inspector */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
-        {/* Left: 2.5D Isometric Three.js Viewport + Interactive GPS Map Switcher */}
-        <div className="lg:col-span-7 relative min-h-[420px] sm:min-h-[480px] rounded-2xl overflow-hidden border border-emerald-800/80 bg-[#03221a] flex flex-col justify-between">
-          {/* 3D WebGL Canvas (kept mounted so camera state persists smoothly) */}
-          <div
-            ref={mapMountRef}
-            data-testid="venue-map-3d-canvas"
-            className={`absolute inset-0 w-full h-full z-0 transition-opacity duration-200 ${
-              mapViewMode === '3d' ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
-            }`}
-          />
-
-          {/* Interactive GPS Google Maps Embed when switched to 'gps' mode */}
-          {mapViewMode === 'gps' && (
-            <iframe
-              title={`Peta GPS Interaktif ${activeVenue?.nama || 'Kantor Kemenag Kab. Tojo Una-Una'}`}
-              src={`https://maps.google.com/maps?q=${encodeURIComponent(activeGpsQuery)}&hl=id&z=17&output=embed`}
-              className="absolute inset-0 w-full h-full z-0 border-0"
-              loading="lazy"
-              referrerPolicy="no-referrer-when-downgrade"
-            />
-          )}
-
-          {/* Top Map Bar: Legend & 3D / GPS Interactive Map Toggle */}
-          <div className="relative z-10 p-3.5 pointer-events-none flex flex-wrap items-center justify-between gap-2">
-            <div className="bg-[#021b15]/95 border border-emerald-700/70 rounded-lg px-3 py-1.5 text-xs text-emerald-200 flex items-center gap-2 pointer-events-auto">
-              <Compass className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-              <span className="font-mono-tabular">GPS: {activeGpsString}</span>
+      {/* PIN Prompt when Admin clicks + Input / Edit Titik Koordinat while locked */}
+      {showPinPrompt && !isAdminUnlocked && (
+        <form
+          onSubmit={handleVerifyPin}
+          className="mb-6 p-4 rounded-2xl bg-[#021b15] border-2 border-amber-400/60 space-y-3"
+        >
+          <div className="flex items-center justify-between">
+            <div className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+              <Lock className="w-3.5 h-3.5" />
+              <span>
+                Masukkan PIN Admin untuk Menambah / Mengedit Titik Koordinat GPS (Start Jalan Santai, Lokasi Acara, dll.)
+              </span>
             </div>
+            <button
+              type="button"
+              onClick={() => setShowPinPrompt(false)}
+              className="text-xs text-slate-400 hover:text-white cursor-pointer"
+            >
+              Batal
+            </button>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input
+              type="password"
+              value={pinInput}
+              onChange={(e) => setPinInput(e.target.value)}
+              placeholder="Masukkan PIN Admin..."
+              className="flex-1 px-3 py-2 rounded-lg bg-[#03251c] border border-emerald-700 text-white text-xs focus:outline-none focus:border-amber-400"
+              autoFocus
+            />
+            <button
+              type="submit"
+              className="px-4 py-2 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs cursor-pointer"
+            >
+              Buka Input Titik Koordinat
+            </button>
+          </div>
+          {pinError && <p className="text-xs text-rose-400 font-semibold">{pinError}</p>}
+        </form>
+      )}
 
-            <div className="flex items-center gap-1.5 bg-[#021b15]/95 border border-emerald-700/80 p-1 rounded-lg pointer-events-auto">
-              <button
-                type="button"
-                onClick={() => setMapViewMode('3d')}
-                className={`px-2.5 py-1 rounded text-xs font-semibold cursor-pointer transition-colors ${
-                  mapViewMode === '3d'
-                    ? 'bg-amber-400 text-slate-950'
-                    : 'text-slate-200 hover:text-white'
-                }`}
-              >
-                Peta 2.5D 3D
-              </button>
-              <button
-                type="button"
-                onClick={() => setMapViewMode('gps')}
-                className={`px-2.5 py-1 rounded text-xs font-semibold cursor-pointer transition-colors ${
-                  mapViewMode === 'gps'
-                    ? 'bg-amber-400 text-slate-950'
-                    : 'text-slate-200 hover:text-white'
-                }`}
-              >
-                Peta GPS Satelit/Maps
-              </button>
+      {/* Notification Toast */}
+      {noticeMsg && (
+        <div className="mb-6 px-4 py-3 rounded-xl bg-emerald-900/90 border border-amber-400/50 text-emerald-100 text-xs font-semibold flex items-center gap-2">
+          <Check className="w-4 h-4 text-amber-300 shrink-0" />
+          <span>{noticeMsg}</span>
+        </div>
+      )}
+
+      {/* Admin Direct GPS Coordinate Input & Management Panel */}
+      {showAdminManager && (
+        <div className="mb-8 p-5 rounded-2xl bg-[#021b15] border-2 border-amber-400/60 space-y-6 shadow-xl">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-800/80 pb-3">
+            <div>
+              <h3 className="text-sm font-bold text-amber-300 flex items-center gap-2">
+                <MapPin className="w-4 h-4" />
+                <span>
+                  Panel Input & Edit Titik Koordinat GPS Kegiatan (Start Jalan Santai, Lomba, Upacara & Baksos)
+                </span>
+              </h3>
+              <p className="text-xs text-slate-300 mt-0.5">
+                Anda dapat mengetik langsung koordinat Latitude, Longitude (dari Google Maps), menempelkan link Google Maps, atau menekan tombol Ambil GPS Lokasi Saya.
+              </p>
             </div>
           </div>
 
-          {/* Bottom Interactive Venue Quick-Jump Bar */}
+          {/* Form Add New Coordinate Checkpoint */}
+          {onAddVenue && (
+            <form
+              onSubmit={handleCreateNewVenue}
+              className="p-4 rounded-xl bg-[#03251c] border border-emerald-700/80 space-y-3.5"
+            >
+              <div className="text-xs font-bold text-emerald-300 uppercase tracking-wider">
+                + Tambah Titik Koordinat Lokasi Baru
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                    Nama Titik / Lokasi Kegiatan *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newNama}
+                    onChange={(e) => setNewNama(e.target.value)}
+                    placeholder="Contoh: Titik Pertemuan & Start Jalan Santai Kerukunan"
+                    className="w-full px-3 py-2 rounded-lg bg-[#021b15] border border-emerald-700 text-xs text-white focus:outline-none focus:border-amber-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                    Kategori Titik Kegiatan
+                  </label>
+                  <input
+                    type="text"
+                    list="kategori-titik-list"
+                    value={newKategori}
+                    onChange={(e) => setNewKategori(e.target.value)}
+                    placeholder="Pilih atau ketik kategori titik..."
+                    className="w-full px-3 py-2 rounded-lg bg-[#021b15] border border-emerald-700 text-xs text-amber-200 focus:outline-none focus:border-amber-400"
+                  />
+                  <datalist id="kategori-titik-list">
+                    {KATEGORI_TITIK_OPTIONS.map((opt) => (
+                      <option key={opt} value={opt} />
+                    ))}
+                  </datalist>
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-[11px] font-semibold text-amber-300 mb-1">
+                    Titik Koordinat GPS (Latitude, Longitude) atau Tempel Link Google Maps *
+                  </label>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      type="text"
+                      required
+                      value={newGpsInput}
+                      onChange={(e) => setNewGpsInput(e.target.value)}
+                      placeholder="Contoh: -0.9125845029778236, 121.58667527394272"
+                      className="flex-1 px-3 py-2 rounded-lg bg-[#021b15] border border-amber-400/60 text-xs text-amber-300 font-mono-tabular focus:outline-none focus:border-amber-400"
+                    />
+                    <button
+                      type="button"
+                      disabled={locatingGps}
+                      onClick={() => handleDetectMyLocation('new')}
+                      className="px-3.5 py-2 rounded-lg bg-emerald-800 hover:bg-emerald-700 text-amber-200 text-xs font-bold flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
+                    >
+                      <LocateFixed className="w-3.5 h-3.5" />
+                      <span>{locatingGps ? 'Mengambil GPS...' : 'Ambil Titik GPS Lokasi Saya'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                    Alamat Lengkap / Patokan Lokasi
+                  </label>
+                  <input
+                    type="text"
+                    value={newAlamat}
+                    onChange={(e) => setNewAlamat(e.target.value)}
+                    placeholder="Contoh: Depan Kantor Kemenag Kab. Tojo Una-Una, Jl. Merdeka"
+                    className="w-full px-3 py-2 rounded-lg bg-[#021b15] border border-emerald-700 text-xs text-white focus:outline-none focus:border-amber-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                    Info Waktu Kumpul / Kapasitas Peserta
+                  </label>
+                  <input
+                    type="text"
+                    value={newKapasitas}
+                    onChange={(e) => setNewKapasitas(e.target.value)}
+                    placeholder="Contoh: Kumpul Pukul 06:00 WITA · Start 06:30 WITA"
+                    className="w-full px-3 py-2 rounded-lg bg-[#021b15] border border-emerald-700 text-xs text-white focus:outline-none focus:border-amber-400"
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                    Deskripsi / Keterangan Rangkaian Kegiatan di Titik Ini
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={newDeskripsi}
+                    onChange={(e) => setNewDeskripsi(e.target.value)}
+                    placeholder="Contoh: Titik kumpul peserta jalan santai, pembagian kupon jalan sehat, senam pagi, dan pelepasan peserta..."
+                    className="w-full px-3 py-2 rounded-lg bg-[#021b15] border border-emerald-700 text-xs text-white focus:outline-none focus:border-amber-400"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Simpan & Tambahkan Titik Koordinat ke Peta GPS</span>
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* Existing Coordinate Points List with Edit & Delete */}
+          <div className="space-y-2.5">
+            <div className="text-xs font-bold text-emerald-300 uppercase tracking-wider">
+              Daftar Titik Koordinat Saat Ini ({venues.length} Titik Lokasi) — Klik Edit untuk Mengubah Koordinat
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-96 overflow-y-auto pr-1">
+              {venues.map((v) => {
+                const isEditing = editingVenueId === v.id;
+                const gpsText =
+                  v.koordinatGps ||
+                  `${v.latitude ?? -0.9125845029778236}, ${v.longitude ?? 121.58667527394272}`;
+
+                return (
+                  <div
+                    key={v.id}
+                    className="p-3.5 rounded-xl bg-[#03251c] border border-emerald-800/90 space-y-2.5 text-xs"
+                  >
+                    {isEditing ? (
+                      <div className="space-y-2">
+                        <div className="text-[11px] font-bold text-amber-300">
+                          Edit Titik Lokasi: {v.nama}
+                        </div>
+                        <input
+                          type="text"
+                          value={editForm.nama}
+                          onChange={(e) =>
+                            setEditForm((prev) => ({ ...prev, nama: e.target.value }))
+                          }
+                          placeholder="Nama Titik Lokasi"
+                          className="w-full px-2.5 py-1.5 rounded bg-[#021b15] border border-emerald-700 text-white font-bold text-xs"
+                        />
+                        <input
+                          type="text"
+                          list="kategori-titik-list"
+                          value={editForm.kategoriTitik}
+                          onChange={(e) =>
+                            setEditForm((prev) => ({ ...prev, kategoriTitik: e.target.value }))
+                          }
+                          placeholder="Kategori Titik"
+                          className="w-full px-2.5 py-1.5 rounded bg-[#021b15] border border-emerald-700 text-amber-200 text-xs"
+                        />
+                        <div className="flex gap-1.5">
+                          <input
+                            type="text"
+                            value={editForm.koordinatGps}
+                            onChange={(e) =>
+                              setEditForm((prev) => ({ ...prev, koordinatGps: e.target.value }))
+                            }
+                            placeholder="Latitude, Longitude GPS"
+                            className="flex-1 px-2.5 py-1.5 rounded bg-[#021b15] border border-amber-400 text-amber-300 font-mono-tabular text-xs"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleDetectMyLocation('edit')}
+                            className="px-2.5 py-1.5 rounded bg-emerald-800 hover:bg-emerald-700 text-amber-200 text-[11px] font-semibold cursor-pointer shrink-0"
+                            title="Gunakan titik GPS perangkat saat ini"
+                          >
+                            GPS Saya
+                          </button>
+                        </div>
+                        <input
+                          type="text"
+                          value={editForm.alamat}
+                          onChange={(e) =>
+                            setEditForm((prev) => ({ ...prev, alamat: e.target.value }))
+                          }
+                          placeholder="Alamat / Patokan"
+                          className="w-full px-2.5 py-1.5 rounded bg-[#021b15] border border-emerald-700 text-slate-200 text-xs"
+                        />
+                        <input
+                          type="text"
+                          value={editForm.kapasitas}
+                          onChange={(e) =>
+                            setEditForm((prev) => ({ ...prev, kapasitas: e.target.value }))
+                          }
+                          placeholder="Waktu Kumpul / Kapasitas"
+                          className="w-full px-2.5 py-1.5 rounded bg-[#021b15] border border-emerald-700 text-slate-200 text-xs"
+                        />
+                        <textarea
+                          rows={2}
+                          value={editForm.deskripsi}
+                          onChange={(e) =>
+                            setEditForm((prev) => ({ ...prev, deskripsi: e.target.value }))
+                          }
+                          placeholder="Deskripsi kegiatan di titik ini"
+                          className="w-full px-2.5 py-1.5 rounded bg-[#021b15] border border-emerald-700 text-slate-200 text-xs"
+                        />
+                        <div className="flex items-center justify-end gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => setEditingVenueId(null)}
+                            className="px-3 py-1 rounded bg-slate-800 text-slate-300 text-[11px] font-semibold cursor-pointer"
+                          >
+                            Batal
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSaveEditVenue(v.id)}
+                            className="px-3 py-1 rounded bg-amber-400 text-slate-950 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                          >
+                            <Check className="w-3 h-3" />
+                            <span>Simpan</span>
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <div className="text-[10px] font-bold uppercase tracking-wider text-amber-300">
+                              {v.kategoriTitik || 'Titik Pelaksanaan Resmi'}
+                            </div>
+                            <div className="font-bold text-white text-xs mt-0.5">{v.nama}</div>
+                            <div className="text-[11px] text-emerald-300 font-mono-tabular mt-0.5">
+                              GPS: {gpsText}
+                            </div>
+                            <div className="text-[11px] text-slate-400 mt-0.5 line-clamp-1">
+                              {v.alamat}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleStartEditVenue(v)}
+                              className="px-2.5 py-1 rounded bg-amber-400/20 hover:bg-amber-400/30 border border-amber-400/40 text-amber-300 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                            >
+                              <Edit3 className="w-3 h-3" />
+                              <span>Edit</span>
+                            </button>
+                            {onDeleteVenue && venues.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => onDeleteVenue(v.id)}
+                                className="p-1.5 rounded bg-rose-950 hover:bg-rose-900 text-rose-300 border border-rose-700/50 cursor-pointer"
+                                title="Hapus Titik Lokasi"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Accessible Checkpoint Selector Strip */}
+      <div
+        role="tablist"
+        aria-label="Daftar Titik Koordinat Lokasi HAB ke-81"
+        className="mb-6 flex flex-wrap items-center gap-2 bg-[#03221a] p-2.5 rounded-2xl border border-emerald-800/80"
+      >
+        {venues.map((v) => {
+          const isSelected = v.id === activeVenue?.id;
+          return (
+            <button
+              key={v.id}
+              role="tab"
+              aria-selected={isSelected}
+              type="button"
+              onClick={() => onSelectVenue(v.id)}
+              className={`px-3.5 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-2 ${
+                isSelected
+                  ? 'bg-amber-400 text-slate-950 font-bold shadow-md'
+                  : 'bg-[#021b15]/80 text-slate-200 hover:text-white hover:bg-emerald-900/60 border border-emerald-800/60'
+              }`}
+            >
+              <MapPin
+                className={`w-3.5 h-3.5 shrink-0 ${
+                  isSelected ? 'text-slate-950' : 'text-amber-400'
+                }`}
+              />
+              <span>{v.nama}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Main 2-Column Split: Left Pure GPS Satellite/Maps Embed, Right Dynamic Checkpoint Details */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+        {/* Left: Interactive GPS Satellite / Maps Viewport */}
+        <div className="lg:col-span-7 relative min-h-[440px] sm:min-h-[500px] rounded-2xl overflow-hidden border border-emerald-800/80 bg-[#03221a] flex flex-col justify-between shadow-xl">
+          {/* Top Bar: Active GPS Coordinate Pill + Satellite / Standard Map Switcher + Zoom */}
+          <div className="relative z-10 p-3 bg-[#021b15]/95 border-b border-emerald-800/80 flex flex-wrap items-center justify-between gap-2">
+            <div className="bg-[#03251c] border border-emerald-700/80 rounded-lg px-3 py-1.5 text-xs text-emerald-200 flex items-center gap-2">
+              <Compass className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <span className="font-mono-tabular font-semibold">GPS: {activeGpsString}</span>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5">
+              {/* Satellite vs Road Map Switcher */}
+              <div className="flex items-center gap-1 bg-[#03251c] border border-emerald-700/80 p-1 rounded-lg">
+                <button
+                  type="button"
+                  onClick={() => setMapLayerType('h')}
+                  className={`px-2.5 py-1 rounded text-xs font-bold cursor-pointer transition-colors flex items-center gap-1 ${
+                    mapLayerType === 'h'
+                      ? 'bg-amber-400 text-slate-950'
+                      : 'text-slate-200 hover:text-white'
+                  }`}
+                >
+                  <Globe className="w-3 h-3" />
+                  <span>Peta GPS Satelit</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMapLayerType('m')}
+                  className={`px-2.5 py-1 rounded text-xs font-bold cursor-pointer transition-colors ${
+                    mapLayerType === 'm'
+                      ? 'bg-amber-400 text-slate-950'
+                      : 'text-slate-200 hover:text-white'
+                  }`}
+                >
+                  Peta Maps Standar
+                </button>
+              </div>
+
+              {/* Zoom Level Selector */}
+              <select
+                aria-label="Tingkat Zoom Peta GPS"
+                value={mapZoom}
+                onChange={(e) => setMapZoom(Number(e.target.value))}
+                className="px-2.5 py-1.5 rounded-lg bg-[#03251c] border border-emerald-700/80 text-xs text-amber-300 font-semibold cursor-pointer focus:outline-none"
+              >
+                <option value={19}>Zoom Dekat (19x)</option>
+                <option value={17}>Zoom Detail (17x)</option>
+                <option value={15}>Zoom Kawasan (15x)</option>
+                <option value={12}>Zoom Kabupaten (12x)</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Embedded Google Maps GPS / Satellite Iframe */}
+          <div className="relative flex-1 w-full min-h-[340px] bg-[#021b15]">
+            <iframe
+              key={`${activeGpsQuery}-${mapLayerType}-${mapZoom}`}
+              title={`Peta GPS Satelit ${activeVenue?.nama || 'Kantor Kemenag Kab. Tojo Una-Una'}`}
+              src={`https://maps.google.com/maps?q=${encodeURIComponent(activeGpsQuery)}&hl=id&z=${mapZoom}&t=${mapLayerType}&output=embed`}
+              className="absolute inset-0 w-full h-full border-0"
+              loading="lazy"
+              referrerPolicy="no-referrer-when-downgrade"
+              allowFullScreen
+            />
+          </div>
+
+          {/* Bottom Status Bar */}
           <div className="relative z-10 p-3 bg-[#021b15]/95 border-t border-emerald-800/80 flex flex-wrap items-center justify-between gap-3 text-xs">
             <div className="text-slate-300 truncate">
-              Lokasi Terpilih:{' '}
+              Titik Terpilih:{' '}
               <strong className="text-amber-300">{activeVenue?.nama || '-'}</strong>
             </div>
             <div className="font-mono-tabular text-emerald-300 shrink-0">
-              Titik Koordinat: {activeGpsString}
+              Koordinat: {activeGpsString}
             </div>
           </div>
         </div>
 
-        {/* Right: Selected Venue Details, Active Competitions & Schedule */}
-        <div className="lg:col-span-5 bg-[#03251c] border border-emerald-800/80 rounded-2xl p-6 flex flex-col justify-between space-y-5">
+        {/* Right: Selected Checkpoint Details, Active Competitions & Schedule */}
+        <div className="lg:col-span-5 bg-[#03251c] border border-emerald-800/80 rounded-2xl p-6 flex flex-col justify-between space-y-5 shadow-xl">
           {activeVenue ? (
             <>
               <div className="space-y-4">
                 <div className="border-b border-emerald-800/70 pb-4">
-                  <div className="text-xs text-amber-300 font-medium mb-1">
-                    Titik Pelaksanaan Resmi · Kapasitas {activeVenue.kapasitas}
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
+                    <span className="px-2.5 py-0.5 rounded-md bg-amber-400/15 border border-amber-400/40 text-[11px] text-amber-300 font-bold">
+                      {activeVenue.kategoriTitik || 'Titik Pelaksanaan Resmi'}
+                    </span>
+                    <span className="text-xs text-emerald-300 font-semibold">
+                      {activeVenue.kapasitas}
+                    </span>
                   </div>
+
                   <h3
                     data-testid="selected-venue-title"
                     className="text-xl font-bold text-white"
@@ -766,10 +853,227 @@ export const VenueMap3D: React.FC<VenueMap3DProps> = ({
                     {activeVenue.nama}
                   </h3>
                   <p className="text-xs text-slate-300 mt-1">{activeVenue.alamat}</p>
-                  <div className="mt-2 inline-flex items-center gap-2 bg-[#021b15] border border-emerald-800/80 rounded-lg px-2.5 py-1 text-[11px] font-mono-tabular text-emerald-300">
-                    <MapPin className="w-3 h-3 text-amber-400 shrink-0" />
-                    <span>Koordinat GPS: {activeGpsString}</span>
+
+                  <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                    <div className="inline-flex items-center gap-2 bg-[#021b15] border border-emerald-800/80 rounded-lg px-3 py-1.5 text-xs font-mono-tabular text-amber-300">
+                      <MapPin className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      <span>Koordinat GPS: {activeGpsString}</span>
+                    </div>
+
+                    {onUpdateVenue && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!isAdminUnlocked) {
+                            setShowPinPrompt(true);
+                            handleStartEditVenue(activeVenue);
+                          } else if (editingVenueId === activeVenue.id) {
+                            setEditingVenueId(null);
+                          } else {
+                            handleStartEditVenue(activeVenue);
+                          }
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-sm"
+                        title="Ubah Titik Koordinat GPS, Nama Tempat, atau Alamat Lokasi Ini"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                        <span>
+                          {editingVenueId === activeVenue.id && isAdminUnlocked
+                            ? 'Tutup Edit Lokasi'
+                            : 'Ubah Titik Koordinat / Lokasi Ini'}
+                        </span>
+                      </button>
+                    )}
                   </div>
+
+                  {/* Direct Inline Edit Form for the Selected Location right inside the Right Card */}
+                  {isAdminUnlocked && editingVenueId === activeVenue.id && (
+                    <div className="mt-4 p-4 rounded-xl bg-[#021b15] border-2 border-amber-400/70 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-amber-300">
+                          Ubah Titik Koordinat & Detail Lokasi: {activeVenue.nama}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setEditingVenueId(null)}
+                          className="text-[11px] text-slate-400 hover:text-white cursor-pointer"
+                        >
+                          Batal
+                        </button>
+                      </div>
+
+                      <div className="space-y-2.5 text-xs">
+                        <div>
+                          <label className="block text-[11px] text-slate-300 font-semibold mb-1">
+                            Nama Tempat / Lokasi (Bisa diganti jika pindah tempat)
+                          </label>
+                          <input
+                            type="text"
+                            value={editForm.nama}
+                            onChange={(e) =>
+                              setEditForm((prev) => ({ ...prev, nama: e.target.value }))
+                            }
+                            placeholder="Contoh: GOR Olahraga & Lapangan Voli/Futsal Ampana"
+                            className="w-full px-3 py-1.5 rounded-lg bg-[#03251c] border border-emerald-700 text-white font-bold text-xs focus:outline-none focus:border-amber-400"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] text-amber-300 font-semibold mb-1">
+                            Titik Koordinat GPS (Lat, Lng), Link Google Maps, atau Ketik Nama Tempat
+                          </label>
+                          <div className="flex flex-col sm:flex-row gap-1.5">
+                            <input
+                              type="text"
+                              value={editForm.koordinatGps}
+                              onChange={(e) =>
+                                setEditForm((prev) => ({
+                                  ...prev,
+                                  koordinatGps: e.target.value,
+                                }))
+                              }
+                              placeholder="Misal: -0.9125845, 121.5866752 atau ketik nama tempat..."
+                              className="flex-1 px-3 py-1.5 rounded-lg bg-[#03251c] border border-amber-400 text-amber-300 font-mono-tabular text-xs focus:outline-none"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleDetectMyLocation('edit')}
+                              className="px-3 py-1.5 rounded-lg bg-emerald-800 hover:bg-emerald-700 text-amber-200 text-[11px] font-bold flex items-center justify-center gap-1 shrink-0 cursor-pointer"
+                            >
+                              <LocateFixed className="w-3.5 h-3.5" />
+                              <span>Ambil GPS Saya</span>
+                            </button>
+                          </div>
+                          {/* Quick Preset Coordinates in Ampana */}
+                          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                            <span className="text-[10px] text-slate-400">Pilih Cepat:</span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setEditForm((prev) => ({
+                                  ...prev,
+                                  koordinatGps: '-0.9125845029778236, 121.58667527394272',
+                                  alamat:
+                                    'Kompleks Perkantoran Bumi Mas / Kantor Kemenag Kab. Tojo Una-Una',
+                                }))
+                              }
+                              className="px-2 py-0.5 rounded bg-emerald-900/80 hover:bg-emerald-800 text-[10px] text-emerald-200 border border-emerald-700 cursor-pointer"
+                            >
+                              Halaman Kantor Kemenag / Bumi Mas
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setEditForm((prev) => ({
+                                  ...prev,
+                                  koordinatGps: '-0.867912, 121.583421',
+                                  alamat: 'Lapangan Taman JH Ampana, Kec. Ampana Kota',
+                                }))
+                              }
+                              className="px-2 py-0.5 rounded bg-emerald-900/80 hover:bg-emerald-800 text-[10px] text-emerald-200 border border-emerald-700 cursor-pointer"
+                            >
+                              Lapangan Taman JH Ampana
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setEditForm((prev) => ({
+                                  ...prev,
+                                  koordinatGps: 'GOR Ampana Kota, Tojo Una-Una',
+                                }))
+                              }
+                              className="px-2 py-0.5 rounded bg-emerald-900/80 hover:bg-emerald-800 text-[10px] text-emerald-200 border border-emerald-700 cursor-pointer"
+                            >
+                              Cari GOR Ampana di Maps
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-[11px] text-slate-300 font-semibold mb-1">
+                              Kategori Titik
+                            </label>
+                            <input
+                              type="text"
+                              list="kategori-titik-list"
+                              value={editForm.kategoriTitik}
+                              onChange={(e) =>
+                                setEditForm((prev) => ({
+                                  ...prev,
+                                  kategoriTitik: e.target.value,
+                                }))
+                              }
+                              className="w-full px-2.5 py-1.5 rounded-lg bg-[#03251c] border border-emerald-700 text-amber-200 text-xs"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[11px] text-slate-300 font-semibold mb-1">
+                              Waktu / Kapasitas
+                            </label>
+                            <input
+                              type="text"
+                              value={editForm.kapasitas}
+                              onChange={(e) =>
+                                setEditForm((prev) => ({
+                                  ...prev,
+                                  kapasitas: e.target.value,
+                                }))
+                              }
+                              className="w-full px-2.5 py-1.5 rounded-lg bg-[#03251c] border border-emerald-700 text-white text-xs"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] text-slate-300 font-semibold mb-1">
+                            Alamat / Patokan Lokasi
+                          </label>
+                          <input
+                            type="text"
+                            value={editForm.alamat}
+                            onChange={(e) =>
+                              setEditForm((prev) => ({ ...prev, alamat: e.target.value }))
+                            }
+                            className="w-full px-2.5 py-1.5 rounded-lg bg-[#03251c] border border-emerald-700 text-white text-xs"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] text-slate-300 font-semibold mb-1">
+                            Deskripsi Kegiatan di Titik Ini
+                          </label>
+                          <textarea
+                            rows={2}
+                            value={editForm.deskripsi}
+                            onChange={(e) =>
+                              setEditForm((prev) => ({ ...prev, deskripsi: e.target.value }))
+                            }
+                            className="w-full px-2.5 py-1.5 rounded-lg bg-[#03251c] border border-emerald-700 text-white text-xs"
+                          />
+                        </div>
+
+                        <div className="flex justify-end gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => setEditingVenueId(null)}
+                            className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold cursor-pointer"
+                          >
+                            Batal
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSaveEditVenue(activeVenue.id)}
+                            className="px-4 py-1.5 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            <span>Simpan Perubahan Titik Lokasi</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   <p className="text-sm text-slate-200 mt-3 leading-relaxed">
                     {activeVenue.deskripsi}
                   </p>
@@ -779,11 +1083,11 @@ export const VenueMap3D: React.FC<VenueMap3DProps> = ({
                 <div>
                   <h4 className="text-xs font-semibold text-emerald-300 mb-2.5 flex items-center gap-1.5">
                     <Trophy className="w-3.5 h-3.5 text-amber-400" />
-                    Cabang Lomba di Lokasi Ini ({venueCompetitions.length})
+                    Cabang Lomba di Titik Ini ({venueCompetitions.length})
                   </h4>
                   {venueCompetitions.length === 0 ? (
                     <p className="text-xs text-slate-400 italic">
-                      Belum ada cabang lomba spesifik di titik ini (fokus acara seremonial/sosial).
+                      Titik ini berfokus pada kegiatan seremonial, titik kumpul jalan santai, atau bakti sosial.
                     </p>
                   ) : (
                     <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
@@ -821,16 +1125,16 @@ export const VenueMap3D: React.FC<VenueMap3DProps> = ({
                   </h4>
                   {venueSchedules.length === 0 ? (
                     <p className="text-xs text-slate-400 italic">
-                      Jadwal detail untuk lokasi ini dapat ditambahkan melalui Panel Admin.
+                      Mengikuti jadwal umum Panitia HAB ke-81.
                     </p>
                   ) : (
-                    <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                    <div className="space-y-2 max-h-36 overflow-y-auto pr-1">
                       {venueSchedules.map((sch) => (
                         <div
                           key={sch.id}
-                          className="bg-[#021b15] border border-emerald-800/60 rounded-lg p-2.5"
+                          className="bg-[#021b15] border border-emerald-800/60 rounded-lg p-2.5 text-xs"
                         >
-                          <div className="text-xs font-semibold text-white">{sch.judul}</div>
+                          <div className="font-semibold text-white">{sch.judul}</div>
                           <div className="text-[11px] text-amber-300/90 mt-0.5 font-mono-tabular">
                             {sch.tanggal} · {sch.waktu} · Status: {sch.status}
                           </div>
@@ -841,25 +1145,33 @@ export const VenueMap3D: React.FC<VenueMap3DProps> = ({
                 </div>
               </div>
 
-              {/* Google Maps Action Link */}
-              <div className="pt-3 border-t border-emerald-800/70 flex items-center justify-between gap-3">
+              {/* Action Buttons: Direct Google Maps Route + WhatsApp Share */}
+              <div className="pt-3 border-t border-emerald-800/70 flex flex-col sm:flex-row gap-2.5">
                 <a
-                  href={activeVenue.googleMapsUrl}
+                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                    activeGpsQuery
+                  )}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="w-full py-2.5 px-4 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-semibold text-xs flex items-center justify-center gap-2 transition-colors whitespace-nowrap"
+                  className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs transition-colors"
                 >
                   <Navigation className="w-4 h-4" />
-                  <span>Buka Petunjuk Arah di Google Maps</span>
+                  <span>Buka Petunjuk Arah Google Maps</span>
                   <ExternalLink className="w-3.5 h-3.5" />
                 </a>
+
+                <button
+                  type="button"
+                  onClick={() => handleShareVenueToWa(activeVenue)}
+                  className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs transition-colors cursor-pointer shrink-0"
+                >
+                  <Share2 className="w-3.5 h-3.5" />
+                  <span>Bagikan Lokasi ke WA</span>
+                </button>
               </div>
             </>
           ) : (
-            <div className="text-sm text-slate-400 flex items-center gap-2">
-              <Users className="w-4 h-4" />
-              Pilih salah satu lokasi di peta.
-            </div>
+            <div className="text-sm text-slate-400">Pilih titik lokasi pada daftar di atas.</div>
           )}
         </div>
       </div>

@@ -6,7 +6,7 @@
       "type": "object",
       "properties": {
         "branding": { "type": "object", "description": "Branding and audio greeting settings" },
-        "venues": { "type": "array", "description": "List of 3D venue locations" },
+        "venues": { "type": "array", "description": "List of GPS coordinate locations and activity checkpoints" },
         "satkerList": { "type": "array", "description": "List of participating Satker units" },
         "competitions": { "type": "array", "description": "List of competitions and Juknis" },
         "matches": { "type": "array", "description": "List of live match scores" },
