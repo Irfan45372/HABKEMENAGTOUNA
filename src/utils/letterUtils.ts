@@ -198,7 +198,7 @@ export function getEmbeddableDocumentUrl(externalUrl?: string): string | null {
   }
 
   if (trimmed.toLowerCase().endsWith('.pdf')) {
-    return trimmed;
+    return `https://docs.google.com/gview?embedded=true&url=${encodeURIComponent(trimmed)}`;
   }
 
   if (trimmed.toLowerCase().endsWith('.docx') || trimmed.toLowerCase().endsWith('.doc')) {

@@ -12,6 +12,8 @@ import {
   renderAnnouncementWaCardCanvas,
 } from '../utils/letterUtils';
 import { Hab81LogoBadge, KemenagLogoImg } from './DynamicLogoBadge';
+import { InlinePdfCanvasViewer } from './InlinePdfCanvasViewer';
+import { InlineWordDocViewer } from './InlineWordDocViewer';
 import {
   ArrowLeft,
   BookOpen,
@@ -1251,28 +1253,28 @@ export const PanitiaInfoModal: React.FC<PanitiaInfoModalProps> = ({
                   ) : (
                     <>
                       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
-                        <div className="flex items-start gap-3">
+                        <div className="flex items-start gap-3 flex-1 min-w-0">
                           <span className="w-7 h-7 rounded-lg bg-amber-400 text-slate-950 font-extrabold text-xs flex items-center justify-center shrink-0 mt-0.5">
                             {index + 1}
                           </span>
-                          <div className="space-y-2">
+                          <div className="space-y-2.5 flex-1 min-w-0">
                             <div className="inline-flex flex-wrap items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-400/15 border border-amber-400/40 text-amber-300 text-xs font-extrabold">
                               <span>📢 Ringkasan Redaksi WA:</span>
                               <span className="text-white">&ldquo;{itemSnippetWords}&rdquo;</span>
                             </div>
-                            <p className="text-sm sm:text-base text-white leading-relaxed font-medium">
+                            <p className="text-sm sm:text-base text-white leading-relaxed font-medium break-words">
                               {item}
                             </p>
 
                             {/* Always-available User Actions: Lihat Isi Surat Langsung di Halaman Web & Unduh Surat */}
-                            <div className="p-3 rounded-xl bg-[#03251c] border border-amber-400/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div className="p-3 rounded-xl bg-[#03251c] border border-amber-400/50 flex flex-col gap-3">
                               <div className="flex items-start gap-2.5 min-w-0">
                                 <div className="p-2 rounded-lg bg-amber-400/15 border border-amber-400/40 text-amber-300 shrink-0">
                                   <FileText className="w-4 h-4" />
                                 </div>
-                                <div className="min-w-0">
+                                <div className="min-w-0 flex-1">
                                   <div className="flex flex-wrap items-center gap-1.5">
-                                    <span className="px-2 py-0.5 rounded bg-amber-400 text-slate-950 text-[10px] font-extrabold uppercase">
+                                    <span className="px-2 py-0.5 rounded bg-amber-400 text-slate-950 text-[10px] font-extrabold uppercase whitespace-nowrap">
                                       {attachedLetter
                                         ? attachedLetter.fileType === 'pdf'
                                           ? 'SURAT PDF RESMI'
@@ -1282,29 +1284,29 @@ export const PanitiaInfoModal: React.FC<PanitiaInfoModalProps> = ({
                                         : 'LEMBAR SURAT RESMI PANITIA'}
                                     </span>
                                     {attachedLetter?.nomorSurat && (
-                                      <span className="text-[11px] font-mono-tabular text-amber-200">
+                                      <span className="text-[11px] font-mono-tabular text-amber-200 break-all">
                                         No: {attachedLetter.nomorSurat}
                                       </span>
                                     )}
                                   </div>
-                                  <div className="text-xs font-bold text-white truncate mt-0.5">
+                                  <div className="text-xs font-bold text-white break-words mt-0.5">
                                     {attachedLetter?.perihalSurat ||
                                       attachedLetter?.fileName ||
                                       itemSnippetWords}
                                   </div>
-                                  <div className="text-[11px] text-slate-300 truncate">
+                                  <div className="text-[11px] text-slate-300 break-words">
                                     {attachedLetter
                                       ? `File: ${attachedLetter.fileName}${
                                           attachedLetter.fileSizeKb
                                             ? ` (${attachedLetter.fileSizeKb} KB)`
                                             : ''
                                         }`
-                                      : 'Klik tombol di samping untuk melihat isi surat langsung di halaman web atau mengunduh surat.'}
+                                      : 'Klik tombol di bawah untuk melihat isi surat langsung di halaman web atau mengunduh surat.'}
                                   </div>
                                 </div>
                               </div>
 
-                              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                              <div className="flex flex-wrap items-center gap-2">
                                 <button
                                   type="button"
                                   onClick={() =>
@@ -1397,30 +1399,28 @@ export const PanitiaInfoModal: React.FC<PanitiaInfoModalProps> = ({
                                   </div>
                                 </div>
 
-                                {/* Embedded PDF / Google Drive Preview if Admin uploaded a PDF or External Link */}
-                                {attachedLetter?.fileType === 'pdf' && inlineBlobUrl && (
-                                  <div className="space-y-1.5">
-                                    <div className="flex items-center justify-between text-xs font-bold text-emerald-900">
-                                      <span>Dokumen Surat PDF Resmi:</span>
-                                      <a
-                                        href={inlineBlobUrl}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-emerald-700 hover:underline flex items-center gap-1"
-                                      >
-                                        <span>Buka PDF di Tab Baru</span>
-                                        <ExternalLink className="w-3.5 h-3.5" />
-                                      </a>
-                                    </div>
-                                    <div className="w-full h-[55vh] rounded-lg overflow-hidden border border-slate-300 bg-slate-100">
-                                      <iframe
-                                        src={inlineBlobUrl}
-                                        title={attachedLetter.fileName}
-                                        className="w-full h-full border-0"
-                                      />
-                                    </div>
-                                  </div>
-                                )}
+                                {/* Embedded PDF Pages rendered via PDF.js Canvas (Works on Android, iOS, & Desktop!) */}
+                                {attachedLetter?.fileType === 'pdf' &&
+                                  (attachedLetter.fileDataUrl || inlineBlobUrl) && (
+                                    <InlinePdfCanvasViewer
+                                      fileDataUrl={attachedLetter.fileDataUrl}
+                                      blobUrl={inlineBlobUrl}
+                                      fileName={attachedLetter.fileName}
+                                    />
+                                  )}
+
+                                {/* Embedded Word (.DOCX / .DOC) Document rendered directly on Web & Android! */}
+                                {attachedLetter?.fileType === 'word' &&
+                                  (attachedLetter.fileDataUrl || attachedLetter.isiSuratTeks) && (
+                                    <InlineWordDocViewer
+                                      fileDataUrl={attachedLetter.fileDataUrl}
+                                      isiSuratTeks={attachedLetter.isiSuratTeks}
+                                      fileName={attachedLetter.fileName}
+                                      onDownload={() =>
+                                        handleDownloadLetterOrGenerate(item, index, attachedLetter)
+                                      }
+                                    />
+                                  )}
 
                                 {attachedLetter?.externalUrl && (
                                   <div className="space-y-1.5">
@@ -1449,10 +1449,12 @@ export const PanitiaInfoModal: React.FC<PanitiaInfoModalProps> = ({
                                   </div>
                                 )}
 
-                                {/* Full Letter Text Paragraphs directly on the Web Page */}
-                                <div className="text-xs sm:text-sm text-slate-900 leading-relaxed whitespace-pre-line font-serif py-2">
-                                  {attachedLetter?.isiSuratTeks || item}
-                                </div>
+                                {/* Full Letter Text Paragraphs directly on the Web Page (when not already shown by Word viewer) */}
+                                {attachedLetter?.fileType !== 'word' && (
+                                  <div className="text-xs sm:text-sm text-slate-900 leading-relaxed whitespace-pre-line font-serif py-2">
+                                    {attachedLetter?.isiSuratTeks || item}
+                                  </div>
+                                )}
 
                                 {/* Signature & Direct Download Bar */}
                                 <div className="pt-3 border-t border-slate-200 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
@@ -1751,30 +1753,27 @@ export const PanitiaInfoModal: React.FC<PanitiaInfoModalProps> = ({
                 </p>
               </div>
 
-              {/* 1. Embedded PDF / External Document Frame if PDF or External Link */}
-              {readingLetterState.letter.fileType === 'pdf' && activeBlobUrl && (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-xs text-emerald-300 font-semibold">
-                    <span>Pratinjau Dokumen Surat PDF Resmi:</span>
-                    <a
-                      href={activeBlobUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-amber-300 hover:underline flex items-center gap-1"
-                    >
-                      <span>Buka PDF Layar Penuh di Tab Baru</span>
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </a>
-                  </div>
-                  <div className="w-full h-[62vh] rounded-xl overflow-hidden border-2 border-amber-400/50 bg-slate-900">
-                    <iframe
-                      src={activeBlobUrl}
-                      title={readingLetterState.letter.fileName}
-                      className="w-full h-full border-0"
-                    />
-                  </div>
-                </div>
-              )}
+              {/* 1. Embedded PDF Pages rendered via PDF.js Canvas (Works on Android, iOS, & Desktop!) */}
+              {readingLetterState.letter.fileType === 'pdf' &&
+                (readingLetterState.letter.fileDataUrl || activeBlobUrl) && (
+                  <InlinePdfCanvasViewer
+                    fileDataUrl={readingLetterState.letter.fileDataUrl}
+                    blobUrl={activeBlobUrl}
+                    fileName={readingLetterState.letter.fileName}
+                  />
+                )}
+
+              {/* 1b. Embedded Word (.DOCX / .DOC) Document rendered directly on Web & Android! */}
+              {readingLetterState.letter.fileType === 'word' &&
+                (readingLetterState.letter.fileDataUrl ||
+                  readingLetterState.letter.isiSuratTeks) && (
+                  <InlineWordDocViewer
+                    fileDataUrl={readingLetterState.letter.fileDataUrl}
+                    isiSuratTeks={readingLetterState.letter.isiSuratTeks}
+                    fileName={readingLetterState.letter.fileName}
+                    onDownload={() => handleDownloadLetterFile(readingLetterState.letter)}
+                  />
+                )}
 
               {readingLetterState.letter.externalUrl && (
                 <div className="space-y-2">
