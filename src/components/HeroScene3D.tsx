@@ -830,7 +830,7 @@ export const HeroScene3D: React.FC<HeroScene3DProps> = ({
     <section
       id="beranda"
       aria-label="Hero Peringatan Hari Amal Bakti ke-81 Kementerian Agama"
-      className="relative w-full min-h-[700px] lg:h-[calc(100vh-5.25rem)] overflow-hidden bg-[#021b15] flex flex-col justify-between"
+      className="relative w-full min-h-[720px] lg:min-h-[calc(100vh-5.25rem)] overflow-hidden bg-[#021b15] flex flex-col justify-between border-b border-emerald-900/70"
     >
       {/* Dedicated Isolated WebGL Canvas Container */}
       <div
@@ -846,7 +846,7 @@ export const HeroScene3D: React.FC<HeroScene3DProps> = ({
       />
 
       {/* Foreground Semantic Hero Content */}
-      <div className="relative z-20 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 pt-6 pb-28 lg:py-12 flex-1 flex flex-col justify-center pointer-events-none">
+      <div className="relative z-20 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 pt-6 pb-6 lg:py-10 flex-1 flex flex-col justify-center pointer-events-none">
         <div className="max-w-2xl space-y-5 pointer-events-auto">
           {/* Dual Official Logos + Status Metadata Line (Zero Pill Discipline: Clean Unboxed Text with · Separator) */}
           <div className="flex flex-wrap items-center gap-3">
@@ -1090,8 +1090,8 @@ export const HeroScene3D: React.FC<HeroScene3DProps> = ({
       </div>
 
       {/* Unified Collapsible Bottom 3D Control Dock (Solid rgba surface, zero backdrop-filter over WebGL) */}
-      <div className="relative z-20 w-full flex flex-col items-center pb-4 px-4 pointer-events-none">
-        <div className="pointer-events-auto flex flex-col items-center max-w-[920px] w-full">
+      <div className="relative z-20 w-full flex flex-col items-center pt-2 pb-6 px-4 pointer-events-none shrink-0">
+        <div className="pointer-events-auto flex flex-col items-center max-w-[960px] w-full">
           <button
             type="button"
             onClick={() => setDockCollapsed((prev) => !prev)}

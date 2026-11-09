@@ -441,7 +441,7 @@ export const WallOfHarmonySection: React.FC<WallOfHarmonySectionProps> = ({
         </form>
 
         {/* Right 7 Cols: Live Wall of Harmony & Satker Banners */}
-        <div className="lg:col-span-7 grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="lg:col-span-7 grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[680px] overflow-y-auto pr-1 content-start">
           {approvedMessages.map((msg) => {
             const isEditing = isAdminUnlocked && editingMsgId === msg.id;
             return (
@@ -479,6 +479,8 @@ export const WallOfHarmonySection: React.FC<WallOfHarmonySectionProps> = ({
                       <img
                         src={msg.bannerImageUrl}
                         alt={`Banner Ucapan ${msg.jabatanAtauSatker}`}
+                        loading="lazy"
+                        decoding="async"
                         className="w-full h-36 object-cover"
                       />
                     </div>

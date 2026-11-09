@@ -91,7 +91,7 @@ export const ScheduleBaksosSection: React.FC<ScheduleBaksosSectionProps> = ({
             Belum ada agenda pada kategori ini. Admin dapat menambahkan jadwal baru melalui Panel Kontrol.
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 max-h-[680px] overflow-y-auto pr-1">
             {filteredSchedules.map((item) => {
               const statusColor =
                 item.status === 'Sedang Berlangsung'
@@ -187,7 +187,7 @@ export const ScheduleBaksosSection: React.FC<ScheduleBaksosSectionProps> = ({
           </button>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-h-[560px] overflow-y-auto pr-1">
           {baksosMetrics.map((metric) => {
             const pct = Math.min(
               100,

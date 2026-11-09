@@ -865,7 +865,7 @@ export const SatkerBannerSection: React.FC<SatkerBannerSectionProps> = ({
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-h-[820px] overflow-y-auto pr-1">
           {visibleBanners.map((item) => {
             const isEditing = editingId === item.id;
             const isBroken = brokenIds[item.id];

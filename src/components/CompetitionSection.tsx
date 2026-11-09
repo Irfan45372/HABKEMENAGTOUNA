@@ -926,7 +926,7 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
                   )}
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[340px] overflow-y-auto pr-1">
                 {daftarPemain.map((playerValue, idx) => (
                   <div key={idx} className="flex items-center gap-1.5">
                     <input
@@ -1078,7 +1078,7 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
               Belum ada kontingen yang sesuai dengan filter pencarian.
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[680px] overflow-y-auto pr-1">
               {filteredRegistrations.map((reg) => (
                 <div
                   key={reg.id}
@@ -1143,7 +1143,7 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[620px] overflow-y-auto pr-1">
             {matches.map((m) => (
               <div
                 key={m.id}
@@ -1190,7 +1190,7 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
             </p>
           </div>
 
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto max-h-[560px] overflow-y-auto">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="border-b border-emerald-800 text-xs text-slate-300">

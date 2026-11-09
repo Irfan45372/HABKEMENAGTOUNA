@@ -724,7 +724,7 @@ export const VenueMap3D: React.FC<VenueMap3DProps> = ({
       <div
         role="tablist"
         aria-label="Daftar Titik Koordinat Lokasi HAB ke-81"
-        className="mb-6 flex flex-wrap items-center gap-2 bg-[#03221a] p-2.5 rounded-2xl border border-emerald-800/80"
+        className="mb-6 flex flex-wrap items-center gap-2 bg-[#03221a] p-2.5 rounded-2xl border border-emerald-800/80 max-h-40 overflow-y-auto"
       >
         {venues.map((v) => {
           const isSelected = v.id === activeVenue?.id;
