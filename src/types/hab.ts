@@ -156,6 +156,20 @@ export interface WelcomeVoiceConfig {
   audioUrl: string;
 }
 
+export interface AnnouncementLetter {
+  id: string;
+  fileName: string;
+  fileType: 'pdf' | 'word' | 'link';
+  mimeType: string;
+  fileSizeKb?: number;
+  fileDataUrl?: string; // DataURL (.pdf / .docx / .doc) untuk dibaca & diunduh langsung
+  externalUrl?: string; // Link eksternal (misal Google Drive / URL dokumen)
+  nomorSurat?: string;
+  perihalSurat?: string;
+  isiSuratTeks?: string; // Isi teks surat yang diekstrak otomatis dari Word/PDF atau diisi Admin
+  waktuUpload: string;
+}
+
 export interface BrandingConfig {
   brandWordmark?: string; // Default: "HABKEMENAGTOUNA"
   tickerBadgeLabel?: string; // Default: "INFO PANITIA"
@@ -173,6 +187,7 @@ export interface BrandingConfig {
   countdownTargetLabel?: string; // Default: "Target: 03 Jan 2027 · 07:30 WITA"
   countdownTargetIso: string; // Default: 2027-01-03T07:30:00+08:00
   runningTextItems: string[];
+  announcementLetters?: (AnnouncementLetter | null)[];
   allowCustomCompetitionProposal: boolean;
   adminPin: string;
   welcomeVoice?: WelcomeVoiceConfig;

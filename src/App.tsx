@@ -28,6 +28,7 @@ import { Hab81LogoBadge, KemenagLogoImg } from './components/DynamicLogoBadge';
 import { BookOpen, Check, Cloud, Edit3, Megaphone, Settings, Share2 } from 'lucide-react';
 
 import { validateImportedState } from './utils/habLogic';
+import { getAnnouncementSnippetWords, getAnnouncementUrlSlug } from './utils/letterUtils';
 import {
   ADMIN_EMAIL,
   auth,
@@ -237,10 +238,15 @@ export default function App() {
     setIsJournalPageOpen(false);
     setIsAnnouncementPageOpen(true);
     try {
+      const firstAnnouncement =
+        appState.branding.runningTextItems[0] ||
+        'Pengumuman Resmi Panitia HAB ke-81 Kemenag Kab. Tojo Una-Una Tahun 2027';
       const url = new URL(window.location.href);
       url.search = '';
       url.hash = '';
       url.searchParams.set('halaman', 'pengumuman');
+      url.searchParams.set('pengumuman', '1');
+      url.searchParams.set('redaksi', getAnnouncementUrlSlug(firstAnnouncement, 6));
       window.history.replaceState({}, '', url.toString());
     } catch {
       // Ignore
@@ -257,6 +263,7 @@ export default function App() {
       url.searchParams.delete('menu');
       url.searchParams.delete('info');
       url.searchParams.delete('pengumuman');
+      url.searchParams.delete('redaksi');
       window.history.replaceState({}, '', url.toString());
     } catch {
       // Ignore
@@ -267,6 +274,40 @@ export default function App() {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
+
+  // Sync document title & OpenGraph description with the active Pengumuman Redaksi (4-6 words + full redaksi)
+  useEffect(() => {
+    try {
+      const items = appState.branding.runningTextItems;
+      if (!items || items.length === 0) return;
+
+      const params = new URLSearchParams(window.location.search);
+      const rawIdx = parseInt(params.get('pengumuman') || '1', 10);
+      const targetIdx =
+        !Number.isNaN(rawIdx) && rawIdx >= 1 && rawIdx <= items.length ? rawIdx - 1 : 0;
+      const activeRedaksi = items[targetIdx] || items[0];
+      const snippet6Words = getAnnouncementSnippetWords(activeRedaksi, 6);
+
+      const setMetaContent = (selector: string, content: string) => {
+        const el = document.querySelector(selector);
+        if (el) el.setAttribute('content', content);
+      };
+
+      const ogTitle = `Pengumuman Panitia: ${snippet6Words} — HAB ke-81 Kemenag Touna`;
+      const ogDesc = `${activeRedaksi} — Panitia HAB ke-81 Kemenag Kab. Tojo Una-Una Tahun 2027.`;
+
+      if (isAnnouncementPageOpen || panitiaInfoOpen) {
+        document.title = ogTitle;
+      }
+      setMetaContent('meta[property="og:title"]', ogTitle);
+      setMetaContent('meta[name="twitter:title"]', ogTitle);
+      setMetaContent('meta[property="og:description"]', ogDesc);
+      setMetaContent('meta[name="twitter:description"]', ogDesc);
+      setMetaContent('meta[name="description"]', ogDesc);
+    } catch {
+      // Ignore DOM meta update errors
+    }
+  }, [appState.branding.runningTextItems, isAnnouncementPageOpen, panitiaInfoOpen]);
 
   // Listen to Firebase Auth state for Cloud Firestore permissions (Admin Mode UI still requires PIN)
   useEffect(() => {
