@@ -487,7 +487,7 @@ export const JournalSection: React.FC<JournalSectionProps> = ({
                 <h1 className="text-2xl font-extrabold text-slate-900">
                   Indeks Jurnal & Berita Kegiatan HAB ke-81
                 </h1>
-                <p className="text-xs text-slate-600 mt-0.5">
+                <p className="text-[8px] font-normal tracking-wide text-slate-400/60 uppercase mt-0.5 select-none">
                   by HUMAS KEMENTERIAN AGAMA KABUPATEN TOJO UNA UNA
                 </p>
               </div>
@@ -769,7 +769,7 @@ export const JournalSection: React.FC<JournalSectionProps> = ({
 
             {/* Bottom Article Footer & WhatsApp Share */}
             <div className="pt-6 border-t border-slate-200 flex flex-wrap items-center justify-between gap-4">
-              <div className="text-xs font-bold text-emerald-900 uppercase tracking-wider">
+              <div className="text-[8px] font-normal tracking-wide text-slate-400/60 uppercase select-none">
                 by HUMAS KEMENTERIAN AGAMA KABUPATEN TOJO UNA UNA
               </div>
               <button

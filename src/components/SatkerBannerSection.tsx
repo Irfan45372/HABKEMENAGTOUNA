@@ -652,6 +652,8 @@ export const SatkerBannerSection: React.FC<SatkerBannerSectionProps> = ({
                       : normalizeBannerImageUrl(imageUrlInput)
                   }
                   alt="Pratinjau Spanduk Satker"
+                  loading="lazy"
+                  decoding="async"
                   referrerPolicy="no-referrer"
                   className="h-20 w-36 object-cover rounded-lg border border-amber-400/50 bg-[#03251c]"
                 />
@@ -882,6 +884,8 @@ export const SatkerBannerSection: React.FC<SatkerBannerSectionProps> = ({
                       <img
                         src={displayUrl}
                         alt={item.judul}
+                        loading="lazy"
+                        decoding="async"
                         referrerPolicy="no-referrer"
                         onError={() =>
                           setBrokenIds((prev) => ({
@@ -1140,6 +1144,8 @@ export const SatkerBannerSection: React.FC<SatkerBannerSectionProps> = ({
               <img
                 src={normalizeBannerImageUrl(lightboxItem.imageUrl)}
                 alt={lightboxItem.judul}
+                loading="lazy"
+                decoding="async"
                 referrerPolicy="no-referrer"
                 className="max-h-[68vh] w-auto object-contain rounded-lg"
               />

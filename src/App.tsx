@@ -3,17 +3,22 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { AppState, BrandingConfig, Competition, HarmonyMessage, JalanSehatCoupon, JournalArticle, NavLabelsConfig, ParticipantRegistration, SatkerBannerItem, VenueLocation, VideoItem } from './types/hab';
 import { DEFAULT_APP_STATE, STORAGE_KEY } from './data/defaultState';
 import { HeroScene3D } from './components/HeroScene3D';
 import { VenueMap3D } from './components/VenueMap3D';
 import { CompetitionSection } from './components/CompetitionSection';
 import { ScheduleBaksosSection } from './components/ScheduleBaksosSection';
-import { VideoGallerySection } from './components/VideoGallerySection';
-import { SatkerBannerSection } from './components/SatkerBannerSection';
 import { JalanSehatTwibbonSection } from './components/JalanSehatTwibbonSection';
 import { WallOfHarmonySection } from './components/WallOfHarmonySection';
+
+const VideoGallerySection = lazy(() =>
+  import('./components/VideoGallerySection').then((m) => ({ default: m.VideoGallerySection }))
+);
+const SatkerBannerSection = lazy(() =>
+  import('./components/SatkerBannerSection').then((m) => ({ default: m.SatkerBannerSection }))
+);
 import { JournalSection } from './components/JournalSection';
 import { AdminControlModal } from './components/AdminControlModal';
 import { PanitiaInfoModal } from './components/PanitiaInfoModal';
@@ -34,6 +39,7 @@ import {
   deleteSatkerBannerFromCloud,
   deleteVideoFromCloud,
   doc,
+  ensureCollectionsSeededToCloud,
   getDocFromServer,
   handleFirestoreError,
   onAuthStateChanged,
@@ -54,14 +60,69 @@ import {
 const GITHUB_RAW_STATE_URL =
   'https://raw.githubusercontent.com/Irfan45372/HABKEMENAGTOUNA/main/hab81-kemenag-touna-2027-state.json';
 
+function persistStateLocally(state: AppState): void {
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // Ignore storage quota errors
+  }
+}
+
 export default function App() {
   const [appState, setAppState] = useState<AppState>(() => {
     try {
-      const saved = window.localStorage.getItem(STORAGE_KEY);
+      const saved =
+        window.localStorage.getItem(STORAGE_KEY) ||
+        window.localStorage.getItem('HABKEMENAGTOUNA_81_2027_STATE_V1') ||
+        window.localStorage.getItem('HABKEMENAGTOUNA_81_2027_STATE');
       if (saved) {
-        const parsed = JSON.parse(saved);
+        const parsed = JSON.parse(saved) as AppState;
         if (parsed && parsed.branding && Array.isArray(parsed.competitions)) {
-          return parsed as AppState;
+          const mergedState: AppState = {
+            ...DEFAULT_APP_STATE,
+            ...parsed,
+            branding: {
+              ...DEFAULT_APP_STATE.branding,
+              ...parsed.branding,
+              navLabels: {
+                ...DEFAULT_APP_STATE.branding.navLabels!,
+                ...(parsed.branding.navLabels || {}),
+              },
+              welcomeVoice: {
+                ...DEFAULT_APP_STATE.branding.welcomeVoice!,
+                ...(parsed.branding.welcomeVoice || {}),
+              },
+            },
+            venues:
+              Array.isArray(parsed.venues) && parsed.venues.length > 0
+                ? parsed.venues
+                : DEFAULT_APP_STATE.venues,
+            registrations:
+              Array.isArray(parsed.registrations) && parsed.registrations.length > 0
+                ? parsed.registrations
+                : DEFAULT_APP_STATE.registrations,
+            coupons:
+              Array.isArray(parsed.coupons) && parsed.coupons.length > 0
+                ? parsed.coupons
+                : DEFAULT_APP_STATE.coupons,
+            messages:
+              Array.isArray(parsed.messages) && parsed.messages.length > 0
+                ? parsed.messages
+                : DEFAULT_APP_STATE.messages,
+            videos:
+              Array.isArray(parsed.videos) && parsed.videos.length > 0
+                ? parsed.videos
+                : DEFAULT_APP_STATE.videos,
+            satkerBanners:
+              Array.isArray(parsed.satkerBanners) && parsed.satkerBanners.length > 0
+                ? parsed.satkerBanners
+                : DEFAULT_APP_STATE.satkerBanners,
+            journals:
+              Array.isArray(parsed.journals) && parsed.journals.length > 0
+                ? parsed.journals
+                : DEFAULT_APP_STATE.journals,
+          };
+          return mergedState;
         }
       }
     } catch {
@@ -97,10 +158,16 @@ export default function App() {
       return null;
     }
   });
-  const [panitiaInfoOpen, setPanitiaInfoOpen] = useState<boolean>(() => {
+  const [panitiaInfoOpen, setPanitiaInfoOpen] = useState<boolean>(false);
+  const [isAnnouncementPageOpen, setIsAnnouncementPageOpen] = useState<boolean>(() => {
     try {
       const params = new URLSearchParams(window.location.search);
-      return params.get('info') === 'panitia';
+      return (
+        params.get('halaman') === 'pengumuman' ||
+        params.get('menu') === 'pengumuman' ||
+        params.get('info') === 'panitia' ||
+        Boolean(params.get('pengumuman'))
+      );
     } catch {
       return false;
     }
@@ -158,24 +225,46 @@ export default function App() {
   const openPanitiaInfoModal = () => {
     setMenuTapTrigger((prev) => prev + 1);
     setPanitiaInfoOpen(true);
-    try {
-      const url = new URL(window.location.href);
-      url.searchParams.set('info', 'panitia');
-      window.history.replaceState({}, '', url.toString());
-    } catch {
-      // Ignore
-    }
   };
 
   const closePanitiaInfoModal = () => {
     setPanitiaInfoOpen(false);
+  };
+
+  const openStandaloneAnnouncementPage = () => {
+    setMenuTapTrigger((prev) => prev + 1);
+    setPanitiaInfoOpen(false);
+    setIsJournalPageOpen(false);
+    setIsAnnouncementPageOpen(true);
     try {
       const url = new URL(window.location.href);
+      url.search = '';
+      url.hash = '';
+      url.searchParams.set('halaman', 'pengumuman');
+      window.history.replaceState({}, '', url.toString());
+    } catch {
+      // Ignore
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const closeStandaloneAnnouncementPage = (targetSectionId?: string) => {
+    setMenuTapTrigger((prev) => prev + 1);
+    setIsAnnouncementPageOpen(false);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('halaman');
+      url.searchParams.delete('menu');
       url.searchParams.delete('info');
       url.searchParams.delete('pengumuman');
       window.history.replaceState({}, '', url.toString());
     } catch {
       // Ignore
+    }
+    if (targetSectionId) {
+      wakeAndScrollToSection(targetSectionId);
+    } else {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
 
@@ -207,6 +296,10 @@ export default function App() {
         if (!mainSnap.exists()) {
           // First time initialization: seed Firestore with current state
           await seedInitialStateToCloud(initialStateRef.current);
+        } else {
+          // Ensure all collections (coupons, registrations, messages, videos, banners, journals)
+          // are seeded if any collection is empty, and upgrade old untouched default NIP 1975->1974
+          await ensureCollectionsSeededToCloud(initialStateRef.current);
         }
         setFirebaseConnected(true);
       } catch (error) {
@@ -240,16 +333,44 @@ export default function App() {
           const data = snap.data();
           setAppState((prev) => ({
             ...prev,
-            branding: data.branding || prev.branding,
-            venues: Array.isArray(data.venues) ? data.venues : prev.venues,
-            satkerList: Array.isArray(data.satkerList) ? data.satkerList : prev.satkerList,
-            competitions: Array.isArray(data.competitions) ? data.competitions : prev.competitions,
-            matches: Array.isArray(data.matches) ? data.matches : prev.matches,
-            medalStandings: Array.isArray(data.medalStandings)
-              ? data.medalStandings
-              : prev.medalStandings,
-            schedules: Array.isArray(data.schedules) ? data.schedules : prev.schedules,
-            baksosMetrics: data.baksosMetrics || prev.baksosMetrics,
+            branding: data.branding
+              ? {
+                  ...prev.branding,
+                  ...data.branding,
+                  navLabels: {
+                    ...(prev.branding.navLabels || DEFAULT_APP_STATE.branding.navLabels!),
+                    ...(data.branding.navLabels || {}),
+                  },
+                  welcomeVoice: {
+                    ...prev.branding.welcomeVoice!,
+                    ...(data.branding.welcomeVoice || {}),
+                  },
+                }
+              : prev.branding,
+            venues:
+              Array.isArray(data.venues) && data.venues.length > 0 ? data.venues : prev.venues,
+            satkerList:
+              Array.isArray(data.satkerList) && data.satkerList.length > 0
+                ? data.satkerList
+                : prev.satkerList,
+            competitions:
+              Array.isArray(data.competitions) && data.competitions.length > 0
+                ? data.competitions
+                : prev.competitions,
+            matches:
+              Array.isArray(data.matches) && data.matches.length > 0 ? data.matches : prev.matches,
+            medalStandings:
+              Array.isArray(data.medalStandings) && data.medalStandings.length > 0
+                ? data.medalStandings
+                : prev.medalStandings,
+            schedules:
+              Array.isArray(data.schedules) && data.schedules.length > 0
+                ? data.schedules
+                : prev.schedules,
+            baksosMetrics:
+              Array.isArray(data.baksosMetrics) && data.baksosMetrics.length > 0
+                ? data.baksosMetrics
+                : prev.baksosMetrics,
           }));
         },
         (err) => handleFirestoreError(err, OperationType.GET, 'portalConfig/main')
@@ -259,6 +380,7 @@ export default function App() {
       unsubRegs = onSnapshot(
         collection(db, 'registrations'),
         (snap) => {
+          if (snap.empty) return;
           const items = snap.docs.map((d) => d.data() as ParticipantRegistration);
           items.sort((a, b) => (b.id > a.id ? 1 : -1));
           setAppState((prev) => ({ ...prev, registrations: items }));
@@ -270,6 +392,7 @@ export default function App() {
       unsubCoupons = onSnapshot(
         collection(db, 'coupons'),
         (snap) => {
+          if (snap.empty) return;
           const items = snap.docs.map((d) => d.data() as JalanSehatCoupon);
           items.sort((a, b) => (b.nomorKupon > a.nomorKupon ? 1 : -1));
           setAppState((prev) => ({ ...prev, coupons: items }));
@@ -281,6 +404,7 @@ export default function App() {
       unsubMessages = onSnapshot(
         collection(db, 'messages'),
         (snap) => {
+          if (snap.empty) return;
           const items = snap.docs.map((d) => d.data() as HarmonyMessage);
           items.sort((a, b) => (b.id > a.id ? 1 : -1));
           setAppState((prev) => ({ ...prev, messages: items }));
@@ -292,6 +416,7 @@ export default function App() {
       unsubVideos = onSnapshot(
         collection(db, 'videos'),
         (snap) => {
+          if (snap.empty) return;
           const items = snap.docs.map((d) => d.data() as VideoItem);
           items.sort((a, b) => (b.id > a.id ? 1 : -1));
           setAppState((prev) => ({ ...prev, videos: items }));
@@ -303,6 +428,7 @@ export default function App() {
       unsubBanners = onSnapshot(
         collection(db, 'satkerBanners'),
         (snap) => {
+          if (snap.empty) return;
           const items = snap.docs.map((d) => d.data() as SatkerBannerItem);
           items.sort((a, b) => (b.id > a.id ? 1 : -1));
           setAppState((prev) => ({ ...prev, satkerBanners: items }));
@@ -314,11 +440,12 @@ export default function App() {
       unsubJournals = onSnapshot(
         collection(db, 'journals'),
         (snap) => {
+          if (snap.empty) return;
           const items = snap.docs.map((d) => d.data() as JournalArticle);
           items.sort((a, b) => (b.id > a.id ? 1 : -1));
           setAppState((prev) => ({
             ...prev,
-            journals: items.length > 0 ? items : prev.journals || DEFAULT_APP_STATE.journals || [],
+            journals: items,
           }));
         },
         (err) => handleFirestoreError(err, OperationType.LIST, 'journals')
@@ -426,6 +553,10 @@ export default function App() {
       closeDedicatedJournalPage(sectionId);
       return;
     }
+    if (isAnnouncementPageOpen) {
+      closeStandaloneAnnouncementPage(sectionId);
+      return;
+    }
     wakeAndScrollToSection(sectionId);
   };
 
@@ -440,6 +571,7 @@ export default function App() {
         satkerList: updatedSatkers,
         registrations: [reg, ...prev.registrations],
       };
+      persistStateLocally(next);
       void saveRegistrationToCloud(reg);
       if (newSatkerName && !prev.satkerList.includes(newSatkerName)) {
         void savePortalConfigToCloud(next);
@@ -454,17 +586,22 @@ export default function App() {
         ...prev,
         competitions: prev.competitions.map((c) => (c.id === id ? { ...c, ...partial } : c)),
       };
+      persistStateLocally(next);
       void savePortalConfigToCloud(next);
       return next;
     });
   };
 
   const handleAddCoupon = (coupon: JalanSehatCoupon) => {
-    setAppState((prev) => ({
-      ...prev,
-      coupons: [coupon, ...prev.coupons],
-    }));
-    void saveCouponToCloud(coupon);
+    setAppState((prev) => {
+      const next = {
+        ...prev,
+        coupons: [coupon, ...prev.coupons],
+      };
+      persistStateLocally(next);
+      void saveCouponToCloud(coupon);
+      return next;
+    });
   };
 
   const handleMarkCouponWinner = (couponId: string, prizeName: string) => {
@@ -477,26 +614,31 @@ export default function App() {
         }
         return c;
       });
-      if (updatedItem) {
-        void saveCouponToCloud(updatedItem);
-      }
-      return {
+      const next = {
         ...prev,
         coupons: nextCoupons,
       };
+      persistStateLocally(next);
+      if (updatedItem) {
+        void saveCouponToCloud(updatedItem);
+      }
+      return next;
     });
   };
 
   const handleUpdateCoupon = (
     couponId: string,
-    updatedFields: Pick<JalanSehatCoupon, 'namaPeserta' | 'satkerAtauUmum' | 'nikAtauNip' | 'noHp'>
+    updatedFields: Pick<JalanSehatCoupon, 'namaPeserta' | 'satkerAtauUmum' | 'nikAtauNip' | 'noHp'>,
+    fullFallbackCoupon?: JalanSehatCoupon
   ) => {
     setAppState((prev) => {
       let updatedItem: JalanSehatCoupon | undefined;
+      const targetId = couponId === 'cpn-preview' ? 'cpn-seed-1' : couponId;
       const nextCoupons = prev.coupons.map((c) => {
-        if (c.id === couponId) {
+        if (c.id === couponId || c.id === targetId) {
           updatedItem = {
             ...c,
+            id: targetId,
             namaPeserta: updatedFields.namaPeserta,
             satkerAtauUmum: updatedFields.satkerAtauUmum,
             nikAtauNip: updatedFields.nikAtauNip,
@@ -506,30 +648,51 @@ export default function App() {
         }
         return c;
       });
-      if (updatedItem) {
-        void saveCouponToCloud(updatedItem);
+      if (!updatedItem && fullFallbackCoupon) {
+        updatedItem = {
+          ...fullFallbackCoupon,
+          id: targetId,
+          namaPeserta: updatedFields.namaPeserta,
+          satkerAtauUmum: updatedFields.satkerAtauUmum,
+          nikAtauNip: updatedFields.nikAtauNip,
+          noHp: updatedFields.noHp,
+        };
+        nextCoupons.unshift(updatedItem);
       }
-      return {
+      const next = {
         ...prev,
         coupons: nextCoupons,
       };
+      persistStateLocally(next);
+      if (updatedItem) {
+        void saveCouponToCloud(updatedItem);
+      }
+      return next;
     });
   };
 
   const handleDeleteCoupon = (couponId: string) => {
-    setAppState((prev) => ({
-      ...prev,
-      coupons: prev.coupons.filter((c) => c.id !== couponId),
-    }));
+    setAppState((prev) => {
+      const next = {
+        ...prev,
+        coupons: prev.coupons.filter((c) => c.id !== couponId),
+      };
+      persistStateLocally(next);
+      return next;
+    });
     void deleteCouponFromCloud(couponId);
   };
 
   const handleAddHarmonyMessage = (msg: HarmonyMessage) => {
-    setAppState((prev) => ({
-      ...prev,
-      messages: [msg, ...prev.messages],
-    }));
-    void saveHarmonyMessageToCloud(msg);
+    setAppState((prev) => {
+      const next = {
+        ...prev,
+        messages: [msg, ...prev.messages],
+      };
+      persistStateLocally(next);
+      void saveHarmonyMessageToCloud(msg);
+      return next;
+    });
   };
 
   const handleUpdateHarmonyMessage = (id: string, partial: Partial<HarmonyMessage>) => {
@@ -542,30 +705,40 @@ export default function App() {
         }
         return m;
       });
-      if (updatedItem) {
-        void saveHarmonyMessageToCloud(updatedItem);
-      }
-      return {
+      const next = {
         ...prev,
         messages: nextMessages,
       };
+      persistStateLocally(next);
+      if (updatedItem) {
+        void saveHarmonyMessageToCloud(updatedItem);
+      }
+      return next;
     });
   };
 
   const handleDeleteHarmonyMessage = (id: string) => {
-    setAppState((prev) => ({
-      ...prev,
-      messages: prev.messages.filter((m) => m.id !== id),
-    }));
+    setAppState((prev) => {
+      const next = {
+        ...prev,
+        messages: prev.messages.filter((m) => m.id !== id),
+      };
+      persistStateLocally(next);
+      return next;
+    });
     void deleteHarmonyMessageFromCloud(id);
   };
 
   const handleAddVideo = (video: VideoItem) => {
-    setAppState((prev) => ({
-      ...prev,
-      videos: [video, ...(prev.videos || DEFAULT_APP_STATE.videos || [])],
-    }));
-    void saveVideoToCloud(video);
+    setAppState((prev) => {
+      const next = {
+        ...prev,
+        videos: [video, ...(prev.videos || DEFAULT_APP_STATE.videos || [])],
+      };
+      persistStateLocally(next);
+      void saveVideoToCloud(video);
+      return next;
+    });
   };
 
   const handleUpdateVideo = (id: string, partial: Partial<VideoItem>) => {
@@ -579,23 +752,27 @@ export default function App() {
         }
         return v;
       });
-      if (updatedItem) {
-        void saveVideoToCloud(updatedItem);
-      }
-      return {
+      const next = {
         ...prev,
         videos: nextVideos,
       };
+      persistStateLocally(next);
+      if (updatedItem) {
+        void saveVideoToCloud(updatedItem);
+      }
+      return next;
     });
   };
 
   const handleDeleteVideo = (id: string) => {
     setAppState((prev) => {
       const currentVideos = prev.videos || DEFAULT_APP_STATE.videos || [];
-      return {
+      const next = {
         ...prev,
         videos: currentVideos.filter((v) => v.id !== id),
       };
+      persistStateLocally(next);
+      return next;
     });
     void deleteVideoFromCloud(id);
   };
@@ -612,6 +789,7 @@ export default function App() {
         satkerList: updatedSatkers,
         satkerBanners: [banner, ...currentBanners],
       };
+      persistStateLocally(next);
       void saveSatkerBannerToCloud(banner);
       if (newSatkerName && !prev.satkerList.includes(newSatkerName)) {
         void savePortalConfigToCloud(next);
@@ -631,23 +809,27 @@ export default function App() {
         }
         return b;
       });
-      if (updatedItem) {
-        void saveSatkerBannerToCloud(updatedItem);
-      }
-      return {
+      const next = {
         ...prev,
         satkerBanners: nextBanners,
       };
+      persistStateLocally(next);
+      if (updatedItem) {
+        void saveSatkerBannerToCloud(updatedItem);
+      }
+      return next;
     });
   };
 
   const handleDeleteSatkerBanner = (id: string) => {
     setAppState((prev) => {
       const currentBanners = prev.satkerBanners || DEFAULT_APP_STATE.satkerBanners || [];
-      return {
+      const next = {
         ...prev,
         satkerBanners: currentBanners.filter((b) => b.id !== id),
       };
+      persistStateLocally(next);
+      return next;
     });
     void deleteSatkerBannerFromCloud(id);
   };
@@ -655,10 +837,12 @@ export default function App() {
   const handleAddJournal = (article: JournalArticle) => {
     setAppState((prev) => {
       const currentJournals = prev.journals || DEFAULT_APP_STATE.journals || [];
-      return {
+      const next = {
         ...prev,
         journals: [article, ...currentJournals],
       };
+      persistStateLocally(next);
+      return next;
     });
     void saveJournalToCloud(article);
   };
@@ -674,23 +858,27 @@ export default function App() {
         }
         return j;
       });
-      if (updatedItem) {
-        void saveJournalToCloud(updatedItem);
-      }
-      return {
+      const next = {
         ...prev,
         journals: nextJournals,
       };
+      persistStateLocally(next);
+      if (updatedItem) {
+        void saveJournalToCloud(updatedItem);
+      }
+      return next;
     });
   };
 
   const handleDeleteJournal = (id: string) => {
     setAppState((prev) => {
       const currentJournals = prev.journals || DEFAULT_APP_STATE.journals || [];
-      return {
+      const next = {
         ...prev,
         journals: currentJournals.filter((j) => j.id !== id),
       };
+      persistStateLocally(next);
+      return next;
     });
     void deleteJournalFromCloud(id);
   };
@@ -711,6 +899,7 @@ export default function App() {
         ...prev,
         venues: [...prev.venues, venue],
       };
+      persistStateLocally(next);
       void savePortalConfigToCloud(next);
       return next;
     });
@@ -722,6 +911,7 @@ export default function App() {
         ...prev,
         venues: prev.venues.map((v) => (v.id === id ? { ...v, ...partial } : v)),
       };
+      persistStateLocally(next);
       void savePortalConfigToCloud(next);
       return next;
     });
@@ -733,6 +923,7 @@ export default function App() {
         ...prev,
         venues: prev.venues.filter((v) => v.id !== id),
       };
+      persistStateLocally(next);
       void savePortalConfigToCloud(next);
       return next;
     });
@@ -752,6 +943,7 @@ export default function App() {
           ...partial,
         },
       };
+      persistStateLocally(next);
       void savePortalConfigToCloud(next);
       return next;
     });
@@ -776,6 +968,7 @@ export default function App() {
           },
         },
       };
+      persistStateLocally(next);
       void savePortalConfigToCloud(next);
       return next;
     });
@@ -784,6 +977,7 @@ export default function App() {
   const handleAdminUpdateState = (updater: (prev: AppState) => AppState) => {
     setAppState((prev) => {
       const next = updater(prev);
+      persistStateLocally(next);
       void syncFullStateToCloud(next, prev);
       return next;
     });
@@ -839,11 +1033,14 @@ export default function App() {
             </button>
             <button
               type="button"
-              onClick={() => setIsInlineEditMode(false)}
-              className="px-3 py-1 rounded bg-emerald-900 text-white hover:bg-emerald-800 font-bold flex items-center gap-1 cursor-pointer"
+              onClick={() => {
+                void savePortalConfigToCloud(appState);
+                setIsInlineEditMode(false);
+              }}
+              className="px-3.5 py-1 rounded bg-emerald-900 text-white hover:bg-emerald-800 font-bold flex items-center gap-1 cursor-pointer shadow-sm"
             >
-              <Check className="w-3.5 h-3.5" />
-              <span>Selesai Edit</span>
+              <Check className="w-3.5 h-3.5 text-amber-300" />
+              <span>Simpan & Selesai Edit</span>
             </button>
           </div>
         </div>
@@ -888,16 +1085,31 @@ export default function App() {
             </span>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={openPanitiaInfoModal}
-          className="px-2.5 py-1 rounded-md bg-emerald-800/90 hover:bg-emerald-700 border border-amber-400/40 text-amber-300 font-bold text-[11px] flex items-center gap-1 shrink-0 cursor-pointer"
-          title="Buka & Bagikan Informasi Panitia ke WhatsApp"
-        >
-          <Share2 className="w-3 h-3" />
-          <span className="hidden sm:inline">Bagikan Info Panitia</span>
-          <span className="sm:hidden">Info Panitia</span>
-        </button>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            type="button"
+            onClick={openStandaloneAnnouncementPage}
+            className={`px-2.5 py-1 rounded-md border font-bold text-[11px] flex items-center gap-1 shrink-0 cursor-pointer ${
+              isAnnouncementPageOpen
+                ? 'bg-amber-400 text-slate-950 border-amber-300'
+                : 'bg-[#021b15] hover:bg-emerald-900 border-amber-400/50 text-amber-300'
+            }`}
+            title="Buka Halaman Web Khusus Pengumuman Panitia Saja (?halaman=pengumuman)"
+          >
+            <Megaphone className="w-3 h-3" />
+            <span>Web Pengumuman</span>
+          </button>
+          <button
+            type="button"
+            onClick={openPanitiaInfoModal}
+            className="px-2.5 py-1 rounded-md bg-emerald-800/90 hover:bg-emerald-700 border border-amber-400/40 text-amber-300 font-bold text-[11px] flex items-center gap-1 shrink-0 cursor-pointer"
+            title="Buka & Bagikan Informasi Panitia ke WhatsApp"
+          >
+            <Share2 className="w-3 h-3" />
+            <span className="hidden sm:inline">Bagikan Info Panitia</span>
+            <span className="sm:hidden">Info</span>
+          </button>
+        </div>
       </div>
 
       {/* Strict 3-Zone Top Navigation Bar Contract */}
@@ -918,6 +1130,9 @@ export default function App() {
               if (isJournalPageOpen) {
                 e.preventDefault();
                 closeDedicatedJournalPage('beranda');
+              } else if (isAnnouncementPageOpen) {
+                e.preventDefault();
+                closeStandaloneAnnouncementPage('beranda');
               }
             }}
             className="flex flex-col leading-tight shrink-0 group"
@@ -925,7 +1140,7 @@ export default function App() {
             <span className="font-display text-lg font-bold tracking-tight text-amber-300 group-hover:text-amber-200 whitespace-nowrap">
               {brandWordmark}
             </span>
-            <span className="text-[10px] font-semibold tracking-wider text-emerald-300/95 uppercase whitespace-nowrap">
+            <span className="text-[7.5px] font-normal tracking-wide text-slate-400/45 uppercase whitespace-nowrap select-none">
               by HUMAS KEMENTERIAN AGAMA KABUPATEN TOJO UNA UNA
             </span>
           </a>
@@ -990,17 +1205,23 @@ export default function App() {
                   if (isJournalPageOpen) {
                     e.preventDefault();
                     closeDedicatedJournalPage('beranda');
+                  } else if (isAnnouncementPageOpen) {
+                    e.preventDefault();
+                    closeStandaloneAnnouncementPage('beranda');
                   }
                 }}
                 className={`hover:text-amber-300 hover:underline underline-offset-4 transition-colors whitespace-nowrap shrink-0 ${
-                  !isJournalPageOpen ? 'text-white' : 'text-slate-300'
+                  !isJournalPageOpen && !isAnnouncementPageOpen ? 'text-white' : 'text-slate-300'
                 }`}
               >
                 {navLabels.beranda}
               </a>
               <button
                 type="button"
-                onClick={() => openDedicatedJournalPage()}
+                onClick={() => {
+                  setIsAnnouncementPageOpen(false);
+                  openDedicatedJournalPage();
+                }}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all whitespace-nowrap shrink-0 cursor-pointer ${
                   isJournalPageOpen
                     ? 'bg-amber-400 text-slate-950 shadow-md ring-2 ring-amber-300/60'
@@ -1059,16 +1280,24 @@ export default function App() {
           <button
             type="button"
             onClick={() =>
-              isJournalPageOpen ? closeDedicatedJournalPage('beranda') : openDedicatedJournalPage()
+              isJournalPageOpen
+                ? closeDedicatedJournalPage('beranda')
+                : isAnnouncementPageOpen
+                ? closeStandaloneAnnouncementPage('beranda')
+                : openDedicatedJournalPage()
             }
             className={`md:hidden px-3 py-2 text-xs font-bold rounded-lg flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-              isJournalPageOpen
+              isJournalPageOpen || isAnnouncementPageOpen
                 ? 'bg-emerald-800 text-amber-300 border border-amber-400/60'
                 : 'bg-emerald-900 text-amber-300 border border-emerald-700'
             }`}
           >
             <BookOpen className="w-3.5 h-3.5" />
-            <span>{isJournalPageOpen ? 'Beranda' : navLabels.jurnal || 'Jurnal'}</span>
+            <span>
+              {isJournalPageOpen || isAnnouncementPageOpen
+                ? 'Beranda'
+                : navLabels.jurnal || 'Jurnal'}
+            </span>
           </button>
           <button
             type="button"
@@ -1080,9 +1309,27 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main Content Flow: Dedicated Distraction-Free Journal Mode OR Viewport-Aware Main Portal */}
+      {/* Main Content Flow: Dedicated Standalone Pengumuman Page, Dedicated Journal Page, OR Main Portal */}
       <main className="flex-1">
-        {isJournalPageOpen ? (
+        {isAnnouncementPageOpen ? (
+          <PanitiaInfoModal
+            isOpen={true}
+            isStandalonePage={true}
+            branding={appState.branding}
+            schedules={appState.schedules}
+            adminPin={appState.branding.adminPin}
+            isAdminUnlocked={isAdminUnlocked}
+            onUnlockAdmin={() => setIsAdminUnlocked(true)}
+            onUpdateBranding={handleUpdateBranding}
+            onOpenAdminTab={(tabIdx) => handleOpenAdminTab(tabIdx)}
+            onClose={() => closeStandaloneAnnouncementPage('beranda')}
+            onJumpToSection={scrollToSection}
+            onOpenJournal={() => {
+              setIsAnnouncementPageOpen(false);
+              openDedicatedJournalPage();
+            }}
+          />
+        ) : isJournalPageOpen ? (
           <JournalSection
             journals={appState.journals || DEFAULT_APP_STATE.journals || []}
             satkerList={appState.satkerList}
@@ -1187,17 +1434,25 @@ export default function App() {
               fallbackMinHeight={520}
               forceMount={forcedSectionId === 'galeri-video'}
             >
-              <VideoGallerySection
-                videos={appState.videos || DEFAULT_APP_STATE.videos || []}
-                satkerList={appState.satkerList}
-                adminPin={appState.branding.adminPin}
-                isAdminUnlocked={isAdminUnlocked}
-                onUnlockAdmin={() => setIsAdminUnlocked(true)}
-                onAddVideo={handleAddVideo}
-                onUpdateVideo={handleUpdateVideo}
-                onDeleteVideo={handleDeleteVideo}
-                onOpenAdminVideoTab={() => handleOpenAdminTab(3)}
-              />
+              <Suspense
+                fallback={
+                  <div className="py-16 text-center text-xs text-emerald-300/80">
+                    Memuat Galeri Video & Dokumentasi...
+                  </div>
+                }
+              >
+                <VideoGallerySection
+                  videos={appState.videos || DEFAULT_APP_STATE.videos || []}
+                  satkerList={appState.satkerList}
+                  adminPin={appState.branding.adminPin}
+                  isAdminUnlocked={isAdminUnlocked}
+                  onUnlockAdmin={() => setIsAdminUnlocked(true)}
+                  onAddVideo={handleAddVideo}
+                  onUpdateVideo={handleUpdateVideo}
+                  onDeleteVideo={handleDeleteVideo}
+                  onOpenAdminVideoTab={() => handleOpenAdminTab(3)}
+                />
+              </Suspense>
             </ViewportLazySection>
 
             {/* 6. Galeri Spanduk, Banner Ucapan & Foto Persiapan/Kegiatan Satker */}
@@ -1207,17 +1462,25 @@ export default function App() {
               fallbackMinHeight={640}
               forceMount={forcedSectionId === 'spanduk-satker'}
             >
-              <SatkerBannerSection
-                banners={appState.satkerBanners || DEFAULT_APP_STATE.satkerBanners || []}
-                satkerList={appState.satkerList}
-                adminPin={appState.branding.adminPin}
-                isAdminUnlocked={isAdminUnlocked}
-                onUnlockAdmin={() => setIsAdminUnlocked(true)}
-                onAddBanner={handleAddSatkerBanner}
-                onUpdateBanner={handleUpdateSatkerBanner}
-                onDeleteBanner={handleDeleteSatkerBanner}
-                onOpenAdminBannerTab={() => handleOpenAdminTab(3)}
-              />
+              <Suspense
+                fallback={
+                  <div className="py-16 text-center text-xs text-emerald-300/80">
+                    Memuat Galeri Spanduk & Banner Satker...
+                  </div>
+                }
+              >
+                <SatkerBannerSection
+                  banners={appState.satkerBanners || DEFAULT_APP_STATE.satkerBanners || []}
+                  satkerList={appState.satkerList}
+                  adminPin={appState.branding.adminPin}
+                  isAdminUnlocked={isAdminUnlocked}
+                  onUnlockAdmin={() => setIsAdminUnlocked(true)}
+                  onAddBanner={handleAddSatkerBanner}
+                  onUpdateBanner={handleUpdateSatkerBanner}
+                  onDeleteBanner={handleDeleteSatkerBanner}
+                  onOpenAdminBannerTab={() => handleOpenAdminTab(3)}
+                />
+              </Suspense>
             </ViewportLazySection>
 
             {/* 7. Jalan Sehat Kerukunan QR Coupon Generator, Lucky Draw Spinner & Twibbon */}
@@ -1231,6 +1494,9 @@ export default function App() {
                 branding={appState.branding}
                 satkerList={appState.satkerList}
                 coupons={appState.coupons}
+                adminPin={appState.branding.adminPin}
+                isAdminUnlocked={isAdminUnlocked}
+                onUnlockAdmin={() => setIsAdminUnlocked(true)}
                 onAddCoupon={handleAddCoupon}
                 onMarkCouponWinner={handleMarkCouponWinner}
                 onUpdateCoupon={handleUpdateCoupon}
@@ -1273,7 +1539,7 @@ export default function App() {
               <div className="text-xs text-amber-300 font-semibold">
                 {appState.branding.officialSubtitle}
               </div>
-              <div className="text-xs font-bold tracking-wider text-emerald-300 uppercase mt-1">
+              <div className="text-[8px] font-normal tracking-wide text-slate-400/45 uppercase mt-0.5 select-none">
                 by HUMAS KEMENTERIAN AGAMA KABUPATEN TOJO UNA UNA
               </div>
               <div className="text-[11px] text-slate-400 mt-0.5">
@@ -1336,6 +1602,7 @@ export default function App() {
           handleOpenAdminTab(tabIdx);
         }}
         onClose={closePanitiaInfoModal}
+        onOpenStandalonePage={openStandaloneAnnouncementPage}
         onJumpToSection={scrollToSection}
         onOpenJournal={() => openDedicatedJournalPage()}
       />

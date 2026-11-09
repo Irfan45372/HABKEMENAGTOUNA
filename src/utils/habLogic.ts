@@ -125,11 +125,24 @@ export function validateRegistrationInput(input: {
 }
 
 /**
+ * Normalizes any category string into one of the 2 main categories: 'Olahraga' or 'Lomba'.
+ */
+export function normalizeCompetitionCategory(rawCategory?: string): 'Olahraga' | 'Lomba' {
+  if (!rawCategory) return 'Olahraga';
+  const lower = rawCategory.trim().toLowerCase();
+  if (lower.includes('olahraga') || lower.includes('olah raga')) {
+    return 'Olahraga';
+  }
+  return 'Lomba';
+}
+
+/**
  * Creates a normalized ParticipantRegistration record.
  */
 export function createRegistrationRecord(params: {
   id: string;
   competition?: Competition | null;
+  selectedMainCategory?: 'Olahraga' | 'Lomba';
   isCustomProposal: boolean;
   customCabangName: string;
   customFormat?: ParticipantFormat;
@@ -143,18 +156,23 @@ export function createRegistrationRecord(params: {
   waktuDaftar?: string;
 }): ParticipantRegistration {
   const cleanPlayers = params.daftarPemain.map((p) => p.trim()).filter(Boolean);
+  const customTrimmed = params.customCabangName.trim();
+  const effectiveCompName = params.isCustomProposal
+    ? customTrimmed
+    : customTrimmed || params.competition?.nama || 'Cabang Lomba';
+  const effectiveCategory =
+    params.selectedMainCategory || normalizeCompetitionCategory(params.competition?.kategori);
+
   return {
     id: params.id,
     competitionId: params.isCustomProposal ? 'custom-proposal' : params.competition?.id || 'unknown',
-    competitionName: params.isCustomProposal
-      ? `Usulan: ${params.customCabangName.trim()}`
-      : params.competition?.nama || 'Cabang Lomba',
-    kategori: params.isCustomProposal ? 'Usulan Kontingen' : params.competition?.kategori || 'Olahraga',
+    competitionName: effectiveCompName,
+    kategori: effectiveCategory,
     jenisPeserta: params.isCustomProposal
       ? params.customFormat || 'Beregu/Tim'
       : params.competition?.jenisPeserta || 'Perorangan/Individu',
     isCustomProposal: params.isCustomProposal,
-    customCabangName: params.isCustomProposal ? params.customCabangName.trim() : undefined,
+    customCabangName: customTrimmed || undefined,
     satker: params.satker.trim(),
     namaTimAtauPeserta: params.namaTimAtauPeserta.trim(),
     ketuaAtauOfficial: params.ketuaAtauOfficial.trim() || params.namaTimAtauPeserta.trim(),

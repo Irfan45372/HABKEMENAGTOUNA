@@ -40,11 +40,15 @@ interface JalanSehatTwibbonSectionProps {
   branding: BrandingConfig;
   satkerList: string[];
   coupons: JalanSehatCoupon[];
+  adminPin?: string;
+  isAdminUnlocked?: boolean;
+  onUnlockAdmin?: () => void;
   onAddCoupon: (coupon: JalanSehatCoupon) => void;
   onMarkCouponWinner: (couponId: string, prizeName: string) => void;
   onUpdateCoupon?: (
     couponId: string,
-    updatedFields: Pick<JalanSehatCoupon, 'namaPeserta' | 'satkerAtauUmum' | 'nikAtauNip' | 'noHp'>
+    updatedFields: Pick<JalanSehatCoupon, 'namaPeserta' | 'satkerAtauUmum' | 'nikAtauNip' | 'noHp'>,
+    fullFallbackCoupon?: JalanSehatCoupon
   ) => void;
   onDeleteCoupon?: (couponId: string) => void;
 }
@@ -53,6 +57,9 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
   branding,
   satkerList,
   coupons,
+  adminPin,
+  isAdminUnlocked = false,
+  onUnlockAdmin,
   onAddCoupon,
   onMarkCouponWinner,
   onUpdateCoupon,
@@ -66,6 +73,18 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
   const [nikAtauNip, setNikAtauNip] = useState<string>('');
   const [noHp, setNoHp] = useState<string>('');
   const [couponError, setCouponError] = useState<string | null>(null);
+  const [couponSavedNotice, setCouponSavedNotice] = useState<string | null>(null);
+
+  // Admin PIN Modal State for Locked Actions (Edit / Delete / Lucky Draw)
+  const [showPinModal, setShowPinModal] = useState<boolean>(false);
+  const [pinInput, setPinInput] = useState<string>('');
+  const [pinError, setPinError] = useState<string | null>(null);
+  const [pendingAdminAction, setPendingAdminAction] = useState<
+    | { type: 'edit'; coupon: JalanSehatCoupon }
+    | { type: 'delete'; couponId: string; nomorKupon: string }
+    | { type: 'open_lucky_draw' }
+    | null
+  >(null);
 
   // Inline Edit State for Participant Data (Nomor Undian & Barcode Locked)
   const [isEditingActiveCoupon, setIsEditingActiveCoupon] = useState<boolean>(false);
@@ -87,13 +106,14 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
   const [activeCoupon, setActiveCoupon] = useState<JalanSehatCoupon>(
     () =>
       coupons[0] || {
-        id: 'cpn-preview',
+        id: 'cpn-seed-1',
         nomorKupon: 'HAB81-TOUNA-0001-81',
         namaPeserta: 'H. Muh. Syahrir, S.Ag., M.H.',
         satkerAtauUmum: 'Kantor Kemenag Kab. Tojo Una-Una (Induk)',
-        nikAtauNip: '197503112000031002',
+        nikAtauNip: '197403112000031002',
         noHp: '081241008181',
         waktuRegistrasi: '10 Nov 2026, 08:15 WITA',
+        sudahMenang: false,
       }
   );
 
@@ -249,8 +269,8 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
     }
   };
 
-  // Start editing active coupon participant details (Nomor Undian & Barcode stay locked)
-  const handleStartEditCoupon = (target: JalanSehatCoupon) => {
+  // Start editing active coupon participant details (Nomor Undian & Barcode stay locked; requires Admin unlock)
+  const openEditCouponForm = (target: JalanSehatCoupon) => {
     setActiveCoupon(target);
     setEditNama(target.namaPeserta);
     setEditSatker(target.satkerAtauUmum);
@@ -260,8 +280,20 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
     setEditNotice(null);
   };
 
+  const handleStartEditCoupon = (target: JalanSehatCoupon) => {
+    if (!isAdminUnlocked) {
+      setPendingAdminAction({ type: 'edit', coupon: target });
+      setPinInput('');
+      setPinError(null);
+      setShowPinModal(true);
+      return;
+    }
+    openEditCouponForm(target);
+  };
+
   const handleSaveEditCoupon = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isAdminUnlocked) return;
     if (!editNama.trim() || editNama.trim().length < 2) return;
     const updatedFields = {
       namaPeserta: editNama.trim(),
@@ -270,7 +302,7 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
       noHp: editHp.trim() || '-',
     };
     if (onUpdateCoupon) {
-      onUpdateCoupon(activeCoupon.id, updatedFields);
+      onUpdateCoupon(activeCoupon.id, updatedFields, activeCoupon);
     }
     setActiveCoupon((prev) => ({
       ...prev,
@@ -279,16 +311,47 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
     }));
     setIsEditingActiveCoupon(false);
     setEditNotice(
-      `Data peserta berhasil diperbarui. Nomor Undian (${activeCoupon.nomorKupon}) & Barcode QR tetap permanen.`
+      `✓ Data peserta berhasil disimpan. Nomor Undian (${activeCoupon.nomorKupon}) & Barcode QR tetap permanen.`
     );
-    window.setTimeout(() => setEditNotice(null), 4000);
+    window.setTimeout(() => setEditNotice(null), 4500);
   };
 
-  const handleDeleteCouponItem = (couponId: string, nomorKupon: string) => {
+  const executeDeleteCoupon = (couponId: string, nomorKupon: string) => {
     if (onDeleteCoupon) {
       onDeleteCoupon(couponId);
       setEditNotice(`Kupon ${nomorKupon} telah dihapus dari daftar.`);
       window.setTimeout(() => setEditNotice(null), 3500);
+    }
+  };
+
+  const handleDeleteCouponItem = (couponId: string, nomorKupon: string) => {
+    if (!isAdminUnlocked) {
+      setPendingAdminAction({ type: 'delete', couponId, nomorKupon });
+      setPinInput('');
+      setPinError(null);
+      setShowPinModal(true);
+      return;
+    }
+    executeDeleteCoupon(couponId, nomorKupon);
+  };
+
+  const handleVerifyAdminPin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (pinInput.trim() === (adminPin || branding.adminPin || '812027')) {
+      onUnlockAdmin?.();
+      setShowPinModal(false);
+      if (pendingAdminAction) {
+        if (pendingAdminAction.type === 'edit') {
+          openEditCouponForm(pendingAdminAction.coupon);
+        } else if (pendingAdminAction.type === 'delete') {
+          executeDeleteCoupon(pendingAdminAction.couponId, pendingAdminAction.nomorKupon);
+        } else if (pendingAdminAction.type === 'open_lucky_draw') {
+          setLuckyModalOpen(true);
+        }
+        setPendingAdminAction(null);
+      }
+    } else {
+      setPinError('Kode PIN Admin tidak sesuai.');
     }
   };
 
@@ -630,6 +693,10 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
     setNamaPeserta('');
     setNikAtauNip('');
     setNoHp('');
+    setCouponSavedNotice(
+      `✓ Kupon QR Digital (${newCoupon.nomorKupon}) atas nama ${newCoupon.namaPeserta} berhasil diterbitkan & tersimpan permanen di sistem!`
+    );
+    window.setTimeout(() => setCouponSavedNotice(null), 6000);
   };
 
   const [copiedCouponLink, setCopiedCouponLink] = useState<boolean>(false);
@@ -711,8 +778,15 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
     reader.readAsDataURL(file);
   };
 
-  // Lucky Draw Spinner Handler — Automatically removes drawn coupon from Daftar Undian Aktif!
+  // Lucky Draw Spinner Handler — Automatically removes drawn coupon from Daftar Undian Aktif! (Requires Admin unlock)
   const handleStartSpin = () => {
+    if (!isAdminUnlocked) {
+      setPendingAdminAction({ type: 'open_lucky_draw' });
+      setPinInput('');
+      setPinError(null);
+      setShowPinModal(true);
+      return;
+    }
     const eligible = coupons.filter((c) => !c.sudahMenang);
     if (eligible.length === 0 || isSpinning) return;
 
@@ -817,11 +891,22 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
 
           <button
             type="button"
-            onClick={() => setLuckyModalOpen(true)}
+            onClick={() => {
+              if (!isAdminUnlocked) {
+                setPendingAdminAction({ type: 'open_lucky_draw' });
+                setPinInput('');
+                setPinError(null);
+                setShowPinModal(true);
+                return;
+              }
+              setLuckyModalOpen(true);
+            }}
             className="px-4 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-amber-200 border border-amber-400/40 text-xs font-bold flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-md"
           >
             <Gift className="w-4 h-4 text-amber-300" />
-            <span>Mesin Undian Doorprize ({eligibleCount} Antrean Aktif)</span>
+            <span>
+              {isAdminUnlocked ? '' : '🔒 '}Mesin Undian Doorprize ({eligibleCount} Antrean Aktif)
+            </span>
           </button>
         </div>
       </div>
@@ -848,6 +933,16 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
                   className="p-3 rounded-lg bg-rose-950/90 border border-rose-500/50 text-xs text-rose-200"
                 >
                   {couponError}
+                </div>
+              )}
+
+              {couponSavedNotice && (
+                <div
+                  role="status"
+                  className="p-3 rounded-lg bg-emerald-950/95 border border-emerald-500/70 text-xs text-emerald-200 font-semibold flex items-center gap-2"
+                >
+                  <CheckCircle2 className="w-4 h-4 text-amber-300 shrink-0" />
+                  <span>{couponSavedNotice}</span>
                 </div>
               )}
 
@@ -938,8 +1033,9 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
                 <div className="text-xs font-semibold text-emerald-300">
                   Daftar Undian Aktif ({eligibleCoupons.length} Kupon Belum Diundi):
                 </div>
-                <span className="text-[10px] text-slate-400">
-                  Klik Edit/Hapus jika data keliru
+                <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                  <Lock className="w-3 h-3 text-amber-400" />
+                  <span>{isAdminUnlocked ? 'Mode Admin Aktif' : 'Edit/Hapus Terkunci (Admin)'}</span>
                 </span>
               </div>
 
@@ -976,17 +1072,29 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
                         <button
                           type="button"
                           onClick={() => handleStartEditCoupon(c)}
-                          title="Edit Nama / Data Peserta (Nomor Undian & Barcode Terkunci)"
+                          title={
+                            isAdminUnlocked
+                              ? 'Edit Nama / Data Peserta (Nomor Undian & Barcode Terkunci)'
+                              : 'Khusus Admin: Masukkan PIN untuk mengedit data peserta'
+                          }
                           className="px-2 py-1 rounded bg-[#03251c] hover:bg-emerald-900 border border-emerald-700 text-amber-300 text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
                         >
-                          <Edit3 className="w-3 h-3" />
+                          {isAdminUnlocked ? (
+                            <Edit3 className="w-3 h-3" />
+                          ) : (
+                            <Lock className="w-3 h-3" />
+                          )}
                           <span>Edit</span>
                         </button>
                         {onDeleteCoupon && (
                           <button
                             type="button"
                             onClick={() => handleDeleteCouponItem(c.id, c.nomorKupon)}
-                            title="Hapus Kupon"
+                            title={
+                              isAdminUnlocked
+                                ? 'Hapus Kupon'
+                                : 'Khusus Admin: Masukkan PIN untuk menghapus kupon'
+                            }
                             className="p-1.5 rounded bg-rose-950/90 hover:bg-rose-900 text-rose-300 cursor-pointer"
                           >
                             <Trash2 className="w-3 h-3" />
@@ -1026,9 +1134,24 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
                     }
                   }}
                   className="px-3 py-2 rounded-lg bg-[#021b15] hover:bg-emerald-900 border border-amber-400/50 text-amber-300 font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+                  title={
+                    isAdminUnlocked
+                      ? 'Edit Data Peserta Kupon Ini'
+                      : 'Khusus Admin: Buka Kunci PIN untuk mengedit data peserta'
+                  }
                 >
-                  <Edit3 className="w-3.5 h-3.5" />
-                  <span>{isEditingActiveCoupon ? 'Batal Edit' : 'Edit Data Peserta'}</span>
+                  {isAdminUnlocked ? (
+                    <Edit3 className="w-3.5 h-3.5" />
+                  ) : (
+                    <Lock className="w-3.5 h-3.5" />
+                  )}
+                  <span>
+                    {isEditingActiveCoupon
+                      ? 'Batal Edit'
+                      : isAdminUnlocked
+                      ? 'Edit Data Peserta'
+                      : 'Edit Data Peserta (Admin)'}
+                  </span>
                 </button>
                 <button
                   type="button"
@@ -1680,6 +1803,73 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Admin PIN Verification Modal for Locked Coupon Actions */}
+      {showPinModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Verifikasi PIN Admin Kupon Jalan Sehat"
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
+        >
+          <form
+            onSubmit={handleVerifyAdminPin}
+            className="bg-[#03251c] border border-amber-400/60 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl"
+          >
+            <div className="flex items-center justify-between border-b border-emerald-800 pb-3">
+              <div className="flex items-center gap-2 text-amber-300 font-bold text-sm">
+                <Lock className="w-4 h-4" />
+                <span>Sistem Terkunci — Khusus Admin Panitia</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPinModal(false);
+                  setPendingAdminAction(null);
+                }}
+                className="p-1 rounded-lg bg-[#021b15] text-slate-400 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Masukkan Kode PIN Admin untuk membuka kunci pengeditan data peserta kupon, penghapusan
+              kupon, atau pengundian doorprize panggung utama.
+            </p>
+            {pinError && (
+              <div className="p-2.5 rounded-lg bg-rose-950/90 border border-rose-500/60 text-xs text-rose-200">
+                {pinError}
+              </div>
+            )}
+            <input
+              type="password"
+              value={pinInput}
+              onChange={(e) => setPinInput(e.target.value)}
+              placeholder="Masukkan PIN Admin..."
+              autoFocus
+              className="w-full px-3.5 py-2.5 rounded-xl bg-[#021b15] border border-emerald-700 text-sm text-white font-mono-tabular"
+            />
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPinModal(false);
+                  setPendingAdminAction(null);
+                }}
+                className="px-4 py-2 rounded-lg bg-[#021b15] text-slate-300 text-xs font-semibold cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-bold cursor-pointer"
+              >
+                Buka Kunci Admin
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </section>

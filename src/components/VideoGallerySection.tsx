@@ -574,6 +574,7 @@ export const VideoGallerySection: React.FC<VideoGallerySectionProps> = ({
                 <iframe
                   title={activeVideo?.judul || 'Tayangan Video HAB ke-81'}
                   src={activeEmbedUrl}
+                  loading="lazy"
                   className="w-full h-full border-0"
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                   allowFullScreen
@@ -582,6 +583,7 @@ export const VideoGallerySection: React.FC<VideoGallerySectionProps> = ({
                 <video
                   key={activeVideo.id}
                   src={activeVideo.videoFileUrl}
+                  preload="metadata"
                   controls
                   className="w-full h-full object-contain bg-black"
                 />
@@ -660,6 +662,8 @@ export const VideoGallerySection: React.FC<VideoGallerySectionProps> = ({
                       <img
                         src={activeVideo.bannerUcapanUrl}
                         alt={`Banner Ucapan ${activeVideo.satker}`}
+                        loading="lazy"
+                        decoding="async"
                         className="w-full max-h-44 object-cover rounded-lg border border-amber-400/40"
                       />
                     )}

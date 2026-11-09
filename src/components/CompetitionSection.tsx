@@ -9,10 +9,14 @@ import {
 import {
   createRegistrationRecord,
   getRequiredPlayerSlots,
+  normalizeCompetitionCategory,
   sortMedalStandings,
   validateRegistrationInput,
 } from '../utils/habLogic';
-import { downloadRegistrationsPdfReport } from '../utils/pdfReportGenerator';
+import {
+  downloadRegistrationsCsvReport,
+  downloadRegistrationsPdfReport,
+} from '../utils/pdfReportGenerator';
 import { buildDeepLink, shareToWhatsAppWithFullImage } from '../utils/shareUtils';
 import {
   Award,
@@ -68,19 +72,18 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
     'form' | 'directory' | 'scoreboard' | 'medals'
   >('form');
 
-  // Group competitions by dynamic category
-  const categories = useMemo(() => {
-    const set = new Set<string>();
-    competitions.forEach((c) => set.add(c.kategori));
-    return Array.from(set);
-  }, [competitions]);
-
-  const [selectedCategory, setSelectedCategory] = useState<string>('Semua');
+  // Strictly 2 main categories: 'Olahraga' and 'Lomba'
+  const [selectedCategory, setSelectedCategory] = useState<'Semua' | 'Olahraga' | 'Lomba'>('Semua');
+  const [formMainCategory, setFormMainCategory] = useState<'Olahraga' | 'Lomba'>(() =>
+    normalizeCompetitionCategory(competitions[0]?.kategori)
+  );
   const [selectedCompId, setSelectedCompId] = useState<string>(
     competitions[0]?.id || ''
   );
   const [isCustomProposal, setIsCustomProposal] = useState<boolean>(false);
-  const [customCabangName, setCustomCabangName] = useState<string>('');
+  const [customCabangName, setCustomCabangName] = useState<string>(
+    () => competitions[0]?.nama || ''
+  );
   const [customFormat, setCustomFormat] = useState<ParticipantFormat>('Beregu/Tim');
 
   // Satker selection state
@@ -114,13 +117,15 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
   const [dirSearch, setDirSearch] = useState<string>('');
   const [copiedCompId, setCopiedCompId] = useState<string | null>(null);
 
-  // Sync when external preselectedCompetitionId changes (e.g. from 2.5D Map "Daftar" button)
+  // Sync when external preselectedCompetitionId changes (e.g. from Map "Daftar" button)
   useEffect(() => {
     if (preselectedCompetitionId) {
       const exists = competitions.find((c) => c.id === preselectedCompetitionId);
       if (exists) {
         setIsCustomProposal(false);
         setSelectedCompId(exists.id);
+        setFormMainCategory(normalizeCompetitionCategory(exists.kategori));
+        setCustomCabangName(exists.nama);
         setActiveSubTab('form');
       }
     }
@@ -137,6 +142,8 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
         if (found) {
           setIsCustomProposal(false);
           setSelectedCompId(found.id);
+          setFormMainCategory(normalizeCompetitionCategory(found.kategori));
+          setCustomCabangName(found.nama);
           setActiveSubTab('form');
           if (params.get('juknis') === '1') {
             setActiveJuknisComp(found);
@@ -241,8 +248,30 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
 
   const filteredCompetitionsForSelector = useMemo(() => {
     if (selectedCategory === 'Semua') return competitions;
-    return competitions.filter((c) => c.kategori === selectedCategory);
+    return competitions.filter(
+      (c) => normalizeCompetitionCategory(c.kategori) === selectedCategory
+    );
   }, [competitions, selectedCategory]);
+
+  const competitionsInFormCategory = useMemo(() => {
+    return competitions.filter(
+      (c) => normalizeCompetitionCategory(c.kategori) === formMainCategory
+    );
+  }, [competitions, formMainCategory]);
+
+  const handleSelectMainCategoryInForm = (cat: 'Olahraga' | 'Lomba') => {
+    setFormMainCategory(cat);
+    setSelectedCategory(cat);
+    const matching = competitions.filter(
+      (c) => normalizeCompetitionCategory(c.kategori) === cat
+    );
+    if (!isCustomProposal && matching.length > 0) {
+      setSelectedCompId(matching[0].id);
+      setCustomCabangName(matching[0].nama);
+    } else if (isCustomProposal) {
+      setCustomCabangName('');
+    }
+  };
 
   const handlePlayerNameChange = (idx: number, value: string) => {
     setDaftarPemain((prev) => {
@@ -300,8 +329,9 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
     const newRecord = createRegistrationRecord({
       id: `reg-${Date.now()}`,
       competition: selectedCompetition,
+      selectedMainCategory: formMainCategory,
       isCustomProposal,
-      customCabangName,
+      customCabangName: customCabangName.trim() || selectedCompetition?.nama || '',
       customFormat,
       satker: finalSatker,
       namaTimAtauPeserta: effectiveTeamOrPersonName,
@@ -318,14 +348,18 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
     );
 
     setFormSuccess(
-      `Pendaftaran "${newRecord.namaTimAtauPeserta}" (${newRecord.satker}) pada cabang ${newRecord.competitionName} berhasil disimpan!`
+      `Pendaftaran "${newRecord.namaTimAtauPeserta}" (${newRecord.satker}) pada Kategori ${newRecord.kategori} — ${newRecord.competitionName} berhasil disimpan!`
     );
     setNamaTimAtauPeserta('');
     setKetuaAtauOfficial('');
     setKontakWhatsapp('');
     setNipAtauIdentitas('');
     setCatatanTambahan('');
-    setCustomCabangName('');
+    if (isCustomProposal) {
+      setCustomCabangName('');
+    } else if (selectedCompetition) {
+      setCustomCabangName(selectedCompetition.nama);
+    }
     setDaftarPemain(
       activeFormat === 'Perorangan/Individu'
         ? ['']
@@ -456,20 +490,25 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
               </div>
             </div>
 
-            {/* Category Filter Buttons */}
+            {/* 2 Main Category Filter Buttons */}
             <div className="flex flex-wrap gap-1.5">
-              {['Semua', ...categories].map((cat) => (
+              {(['Semua', 'Olahraga', 'Lomba'] as const).map((cat) => (
                 <button
                   key={cat}
                   type="button"
-                  onClick={() => setSelectedCategory(cat)}
-                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer whitespace-nowrap ${
+                  onClick={() => {
+                    setSelectedCategory(cat);
+                    if (cat === 'Olahraga' || cat === 'Lomba') {
+                      handleSelectMainCategoryInForm(cat);
+                    }
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer whitespace-nowrap ${
                     selectedCategory === cat
-                      ? 'bg-emerald-600 text-white'
-                      : 'bg-[#021b15] text-slate-300 hover:text-white'
+                      ? 'bg-amber-400 text-slate-950 shadow-sm'
+                      : 'bg-[#021b15] text-slate-300 hover:text-white border border-emerald-800/70'
                   }`}
                 >
-                  {cat}
+                  {cat === 'Semua' ? 'Semua Kategori' : `Kategori ${cat}`}
                 </button>
               ))}
             </div>
@@ -479,12 +518,15 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
               {filteredCompetitionsForSelector.map((comp) => {
                 const isSelected = !isCustomProposal && selectedCompId === comp.id;
                 const isClosed = comp.statusPendaftaran === 'Tutup';
+                const normCat = normalizeCompetitionCategory(comp.kategori);
                 return (
                   <div
                     key={comp.id}
                     onClick={() => {
                       setIsCustomProposal(false);
                       setSelectedCompId(comp.id);
+                      setFormMainCategory(normCat);
+                      setCustomCabangName(comp.nama);
                     }}
                     className={`p-3.5 rounded-xl border transition-colors cursor-pointer ${
                       isSelected
@@ -507,7 +549,7 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
 
                     {/* Clean Unboxed Metadata Line */}
                     <div className="text-xs text-slate-300 mt-1.5 flex flex-wrap items-center gap-1.5">
-                      <span className="text-amber-300 font-medium">{comp.kategori}</span>
+                      <span className="text-amber-300 font-semibold">Kategori {normCat}</span>
                       <span aria-hidden="true">·</span>
                       <span>{comp.jenisPeserta}</span>
                       <span aria-hidden="true">·</span>
@@ -554,7 +596,10 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
               {allowCustomProposal && (
                 <button
                   type="button"
-                  onClick={() => setIsCustomProposal(true)}
+                  onClick={() => {
+                    setIsCustomProposal(true);
+                    setCustomCabangName('');
+                  }}
                   className={`w-full p-3.5 rounded-xl border text-left transition-colors cursor-pointer flex items-center justify-between ${
                     isCustomProposal
                       ? 'bg-amber-400/15 border-amber-400 text-amber-200'
@@ -564,10 +609,10 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
                   <div>
                     <div className="text-xs font-bold flex items-center gap-1.5 text-amber-300">
                       <Sparkles className="w-3.5 h-3.5" />
-                      Usulkan / Input Cabang Lomba Lainnya
+                      Input / Ketik Pilihan Olahraga atau Lomba Lainnya
                     </div>
                     <div className="text-[11px] text-slate-300 mt-0.5">
-                      Daftarkan cabang eksibisi atau usulan baru dari Satker Anda
+                      Ketik manual nama cabang Olahraga atau Lomba yang diikuti kontingen Anda
                     </div>
                   </div>
                 </button>
@@ -583,12 +628,14 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
             <div className="border-b border-emerald-800/70 pb-4 flex flex-wrap items-center justify-between gap-2">
               <div>
                 <div className="text-xs text-amber-300 font-semibold">
-                  Formulir Pendaftaran Resmi Kontingen HAB ke-81
+                  Formulir Pendaftaran Resmi Kontingen HAB ke-81 ({ `Kategori ${formMainCategory}` })
                 </div>
                 <h3 className="text-lg font-bold text-white mt-0.5">
-                  {isCustomProposal
-                    ? 'Usulan Cabang Lomba / Ekshibisi Baru'
-                    : selectedCompetition?.nama || 'Pilih Cabang Lomba'}
+                  {customCabangName.trim()
+                    ? customCabangName
+                    : isCustomProposal
+                    ? `Input ${formMainCategory} Baru`
+                    : selectedCompetition?.nama || `Pilih ${formMainCategory}`}
                 </h3>
               </div>
               <div className="text-xs text-emerald-300 font-mono-tabular">
@@ -624,45 +671,117 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
               </div>
             )}
 
-            {/* Custom Proposal Fields (if active) */}
-            {isCustomProposal && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 rounded-xl bg-[#021b15] border border-amber-400/40">
+            {/* STEP 1 & 2: PILIH KATEGORI (OLAHRAGA / LOMBA) & INPUT PILIHAN OLAHRAGA / LOMBA APA */}
+            <div className="p-4 rounded-xl bg-[#021b15] border border-emerald-700/80 space-y-4">
+              {/* 1. Pilih Kategori (Hanya 2 Kategori: Olahraga atau Lomba) */}
+              <div>
+                <label className="block text-xs font-bold text-amber-300 mb-2">
+                  1. Pilih Kategori Pendaftaran (Olahraga atau Lomba) *
+                </label>
+                <div className="grid grid-cols-2 gap-2.5">
+                  {(['Olahraga', 'Lomba'] as const).map((cat) => {
+                    const active = formMainCategory === cat;
+                    return (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() => handleSelectMainCategoryInForm(cat)}
+                        className={`py-2.5 px-4 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                          active
+                            ? 'bg-amber-400 text-slate-950 border-amber-300 shadow-md'
+                            : 'bg-[#03251c] text-slate-200 border-emerald-800 hover:border-emerald-600'
+                        }`}
+                      >
+                        <Trophy className="w-4 h-4" />
+                        <span>Kategori {cat}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 2. Pilih dari Daftar atau Ketik Input Pilihan Olahraga / Lomba Apa */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-emerald-800/60">
+                <div>
+                  <label
+                    htmlFor="form-comp-select"
+                    className="block text-xs font-semibold text-slate-200 mb-1.5"
+                  >
+                    2. Pilih Daftar {formMainCategory} Tersedia *
+                  </label>
+                  <select
+                    id="form-comp-select"
+                    value={isCustomProposal ? '__CUSTOM__' : selectedCompId}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === '__CUSTOM__') {
+                        setIsCustomProposal(true);
+                        setCustomCabangName('');
+                      } else {
+                        setIsCustomProposal(false);
+                        setSelectedCompId(val);
+                        const found = competitions.find((c) => c.id === val);
+                        if (found) {
+                          setCustomCabangName(found.nama);
+                        }
+                      }
+                    }}
+                    className="w-full px-3.5 py-2.5 rounded-lg bg-[#03251c] border border-emerald-700 text-xs sm:text-sm text-white focus:outline-none focus:border-amber-400"
+                  >
+                    {competitionsInFormCategory.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.nama} ({c.jenisPeserta})
+                      </option>
+                    ))}
+                    <option value="__CUSTOM__">
+                      + Ketik Sendiri / Pilihan {formMainCategory} Lainnya...
+                    </option>
+                  </select>
+                </div>
+
                 <div>
                   <label
                     htmlFor="custom-cabang-input"
                     className="block text-xs font-semibold text-amber-200 mb-1.5"
                   >
-                    Nama Usulan Cabang Lomba Baru *
+                    3. Input Pilihan {formMainCategory} Apa yang Diikuti *
                   </label>
                   <input
                     id="custom-cabang-input"
                     type="text"
                     value={customCabangName}
                     onChange={(e) => setCustomCabangName(e.target.value)}
-                    placeholder="Contoh: Lomba Tenis Lapangan Eksekutif"
-                    className="w-full px-3.5 py-2 rounded-lg bg-[#03251c] border border-emerald-700 text-sm text-white focus:outline-none focus:border-amber-400"
+                    placeholder={
+                      formMainCategory === 'Olahraga'
+                        ? 'Ketik olahraga apa (mis: Bola Voli Putra, Futsal, Bulu Tangkis...)'
+                        : 'Ketik lomba apa (mis: Paduan Suara, Qasidah, MTQ, Kuliner...)'
+                    }
+                    className="w-full px-3.5 py-2 rounded-lg bg-[#03251c] border border-amber-400/70 text-sm text-white focus:outline-none focus:border-amber-400"
                   />
                 </div>
-                <div>
+              </div>
+
+              {isCustomProposal && (
+                <div className="pt-2 border-t border-emerald-800/60">
                   <label
                     htmlFor="custom-format-select"
                     className="block text-xs font-semibold text-amber-200 mb-1.5"
                   >
-                    Format Kepesertaan *
+                    Format Kepesertaan ({formMainCategory}) *
                   </label>
                   <select
                     id="custom-format-select"
                     value={customFormat}
                     onChange={(e) => setCustomFormat(e.target.value as ParticipantFormat)}
-                    className="w-full px-3.5 py-2 rounded-lg bg-[#03251c] border border-emerald-700 text-sm text-white focus:outline-none focus:border-amber-400"
+                    className="w-full sm:w-1/2 px-3.5 py-2 rounded-lg bg-[#03251c] border border-emerald-700 text-sm text-white focus:outline-none focus:border-amber-400"
                   >
-                    <option value="Perorangan/Individu">Perorangan/Individu</option>
+                    <option value="Perorangan/Individu">Perorangan/Individu (1 Orang)</option>
                     <option value="Ganda">Ganda (2 Pemain)</option>
-                    <option value="Beregu/Tim">Beregu/Tim</option>
+                    <option value="Beregu/Tim">Beregu/Tim (Regu/Kelompok)</option>
                   </select>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
 
             {/* Dynamic Satker / Kontingen Selector */}
             <div className="space-y-3">
@@ -912,6 +1031,27 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
                   <option value="custom-proposal">Usulan Cabang Baru</option>
                 </select>
               </div>
+
+              {isAdminUnlocked && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const label =
+                      dirCompFilter === 'ALL'
+                        ? 'Semua Cabang Lomba'
+                        : dirCompFilter === 'custom-proposal'
+                        ? 'Usulan Cabang Baru'
+                        : competitions.find((c) => c.id === dirCompFilter)?.nama ||
+                          'Cabang Terpilih';
+                    downloadRegistrationsCsvReport(filteredRegistrations, label);
+                  }}
+                  className="px-3.5 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-600 border border-amber-400/60 text-amber-200 font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-sm"
+                  title="Khusus Admin: Unduh Data Pendaftar dalam format CSV"
+                >
+                  <Download className="w-3.5 h-3.5 text-amber-300" />
+                  <span>Unduh Data Pendaftar (.CSV)</span>
+                </button>
+              )}
 
               <button
                 type="button"

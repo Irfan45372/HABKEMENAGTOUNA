@@ -265,28 +265,49 @@ export async function deleteJournalFromCloud(id: string): Promise<void> {
 export async function seedInitialStateToCloud(state: AppState): Promise<void> {
   try {
     await savePortalConfigToCloud(state);
-    const batch = writeBatch(db);
-    for (const reg of state.registrations || []) {
-      batch.set(doc(db, 'registrations', reg.id), stripUndefined(reg));
-    }
-    for (const coupon of state.coupons || []) {
-      batch.set(doc(db, 'coupons', coupon.id), stripUndefined(coupon));
-    }
-    for (const msg of state.messages || []) {
-      batch.set(doc(db, 'messages', msg.id), stripUndefined(msg));
-    }
-    for (const video of state.videos || []) {
-      batch.set(doc(db, 'videos', video.id), stripUndefined(video));
-    }
-    for (const banner of state.satkerBanners || []) {
-      batch.set(doc(db, 'satkerBanners', banner.id), stripUndefined(banner));
-    }
-    for (const journal of state.journals || []) {
-      batch.set(doc(db, 'journals', journal.id), stripUndefined(journal));
-    }
-    await batch.commit();
+    await ensureCollectionsSeededToCloud(state);
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, 'seedInitialStateToCloud');
+  }
+}
+
+/**
+ * Ensures each collection in Firestore has initial seed data if that collection is currently empty,
+ * while NEVER overwriting any existing documents modified by Admin or Users.
+ */
+export async function ensureCollectionsSeededToCloud(state: AppState): Promise<void> {
+  try {
+    const collectionsToCheck: Array<{
+      name: string;
+      items: Array<{ id: string }>;
+    }> = [
+      { name: 'registrations', items: state.registrations || [] },
+      { name: 'coupons', items: state.coupons || [] },
+      { name: 'messages', items: state.messages || [] },
+      { name: 'videos', items: state.videos || [] },
+      { name: 'satkerBanners', items: state.satkerBanners || [] },
+      { name: 'journals', items: state.journals || [] },
+    ];
+
+    const batch = writeBatch(db);
+    let hasWrites = false;
+
+    for (const col of collectionsToCheck) {
+      if (col.items.length === 0) continue;
+      const snap = await getDocs(collection(db, col.name));
+      if (snap.empty) {
+        for (const item of col.items) {
+          batch.set(doc(db, col.name, item.id), stripUndefined(item));
+          hasWrites = true;
+        }
+      }
+    }
+
+    if (hasWrites) {
+      await batch.commit();
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, 'ensureCollectionsSeededToCloud');
   }
 }
 

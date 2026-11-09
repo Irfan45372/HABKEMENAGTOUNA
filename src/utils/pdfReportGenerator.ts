@@ -430,3 +430,92 @@ export async function downloadJalanSehatPdfReport(
       : 'Laporan-Semua-Kupon-Jalan-Sehat-HAB81-Kemenag-Touna.pdf';
   doc.save(fileName);
 }
+
+/**
+ * Escapes a single cell value for RFC-4180 CSV compatibility.
+ */
+function escapeCsvCell(value: unknown): string {
+  const str = value === null || value === undefined ? '' : String(value);
+  if (/[",\r\n]/.test(str)) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
+/**
+ * Generates a UTF-8 CSV string (with BOM for Excel compatibility) of Competition Participant Registrations.
+ */
+export function generateRegistrationsCsvContent(
+  registrations: ParticipantRegistration[]
+): string {
+  const headers = [
+    'No',
+    'ID Pendaftaran',
+    'Cabang Lomba',
+    'Kategori',
+    'Format Peserta',
+    'Kontingen / Satker',
+    'Nama Peserta / Tim',
+    'Ketua Kontingen / Official',
+    'NIP / Identitas',
+    'Daftar Anggota / Pemain',
+    'No. WhatsApp',
+    'Catatan Tambahan',
+    'Status Verifikasi',
+    'Waktu Pendaftaran',
+  ];
+
+  const rows = registrations.map((reg, index) => [
+    String(index + 1),
+    reg.id || '-',
+    reg.competitionName || '-',
+    reg.kategori || '-',
+    reg.jenisPeserta || '-',
+    reg.satker || '-',
+    reg.namaTimAtauPeserta || '-',
+    reg.ketuaAtauOfficial || '-',
+    reg.nipAtauIdentitas || '-',
+    Array.isArray(reg.daftarPemain) ? reg.daftarPemain.join('; ') : '-',
+    reg.kontakWhatsapp || '-',
+    reg.catatanTambahan || '-',
+    reg.statusVerifikasi || 'Terverifikasi',
+    reg.waktuDaftar || '-',
+  ]);
+
+  const csvLines = [
+    headers.map(escapeCsvCell).join(','),
+    ...rows.map((row) => row.map(escapeCsvCell).join(',')),
+  ];
+
+  // Prepend UTF-8 BOM (\uFEFF) so Microsoft Excel & Google Sheets detect UTF-8 characters properly
+  return `\uFEFF${csvLines.join('\r\n')}`;
+}
+
+/**
+ * Triggers a browser download of the Participant Registrations in .CSV format.
+ */
+export function downloadRegistrationsCsvReport(
+  registrations: ParticipantRegistration[],
+  filterLabel: string = 'Semua Cabang Lomba'
+): void {
+  const csvContent = generateRegistrationsCsvContent(registrations);
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+
+  const safeSlug = filterLabel
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+
+  const link = document.createElement('a');
+  link.href = url;
+  link.setAttribute(
+    'download',
+    `Data-Pendaftar-HAB81-Kemenag-Touna-${safeSlug || 'semua'}.csv`
+  );
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+

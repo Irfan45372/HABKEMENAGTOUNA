@@ -629,7 +629,7 @@ export const DEFAULT_APP_STATE: AppState = {
       nomorKupon: 'HAB81-TOUNA-0001-81',
       namaPeserta: 'H. Muh. Syahrir, S.Ag., M.H.',
       satkerAtauUmum: 'Kantor Kemenag Kab. Tojo Una-Una (Induk)',
-      nikAtauNip: '197503112000031002',
+      nikAtauNip: '197403112000031002',
       noHp: '081241008181',
       waktuRegistrasi: '10 Nov 2026, 08:15 WITA',
       sudahMenang: false,

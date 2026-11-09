@@ -11,9 +11,8 @@ interface ViewportLazySectionProps {
 
 /**
  * Renders its children only when the section is near or inside the user's viewport
- * (or when explicitly forced via navigation / deep-link).
- * When the user scrolls far away from the section, it can unmount heavy DOM/WebGL trees
- * while preserving the measured height so scroll position never jumps.
+ * (or when explicitly forced via navigation / deep-link), and applies a smooth,
+ * hardware-accelerated fade-in + subtle upward transition as it enters the user's view.
  */
 export const ViewportLazySection: React.FC<ViewportLazySectionProps> = ({
   sectionId,
@@ -24,12 +23,21 @@ export const ViewportLazySection: React.FC<ViewportLazySectionProps> = ({
   children,
 }) => {
   const wrapperRef = useRef<HTMLDivElement | null>(null);
-  const [isNearViewport, setIsNearViewport] = useState<boolean>(forceMount);
+  const [isNearViewport, setIsNearViewport] = useState<boolean>(
+    forceMount || sectionId === 'beranda'
+  );
+  const [isVisibleInViewport, setIsVisibleInViewport] = useState<boolean>(
+    forceMount || sectionId === 'beranda'
+  );
   const [measuredHeight, setMeasuredHeight] = useState<number>(fallbackMinHeight);
 
   useEffect(() => {
     if (forceMount) {
       setIsNearViewport(true);
+      const raf = window.requestAnimationFrame(() => {
+        setIsVisibleInViewport(true);
+      });
+      return () => window.cancelAnimationFrame(raf);
     }
   }, [forceMount]);
 
@@ -37,13 +45,14 @@ export const ViewportLazySection: React.FC<ViewportLazySectionProps> = ({
     const el = wrapperRef.current;
     if (!el || typeof IntersectionObserver === 'undefined') {
       setIsNearViewport(true);
+      setIsVisibleInViewport(true);
       return;
     }
 
     let unmountTimer: number | undefined;
 
-    // Observer with generous preload margin (450px above and below screen)
-    const observer = new IntersectionObserver(
+    // 1. Preload & Lifecycle Observer (450px margin above/below screen)
+    const mountObserver = new IntersectionObserver(
       (entries) => {
         const entry = entries[0];
         if (!entry) return;
@@ -67,6 +76,8 @@ export const ViewportLazySection: React.FC<ViewportLazySectionProps> = ({
             setMeasuredHeight(Math.round(rect.height));
           }
 
+          setIsVisibleInViewport(false);
+
           // Small debounce before closing off-screen section to avoid flicker during fast scroll
           unmountTimer = window.setTimeout(() => {
             const currentActive = document.activeElement;
@@ -82,11 +93,36 @@ export const ViewportLazySection: React.FC<ViewportLazySectionProps> = ({
       }
     );
 
-    observer.observe(el);
+    // 2. Visual Fade-In Reveal Observer (triggers when section enters the visible viewport)
+    const revealObserver = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (!entry) return;
+        if (entry.isIntersecting) {
+          setIsVisibleInViewport(true);
+        } else if (!forceMount) {
+          // Reset fade state only when completely outside the visible viewport
+          const rect = entry.boundingClientRect;
+          const vh = window.innerHeight || document.documentElement.clientHeight;
+          if (rect.bottom < -60 || rect.top > vh + 60) {
+            setIsVisibleInViewport(false);
+          }
+        }
+      },
+      {
+        root: null,
+        rootMargin: '-35px 0px -35px 0px',
+        threshold: 0.04,
+      }
+    );
+
+    mountObserver.observe(el);
+    revealObserver.observe(el);
 
     return () => {
       if (unmountTimer) window.clearTimeout(unmountTimer);
-      observer.disconnect();
+      mountObserver.disconnect();
+      revealObserver.disconnect();
     };
   }, [forceMount, unmountWhenFarOffscreen]);
 
@@ -100,13 +136,19 @@ export const ViewportLazySection: React.FC<ViewportLazySectionProps> = ({
       className="w-full"
     >
       {shouldRender ? (
-        children
+        <div
+          className={`viewport-section-reveal ${
+            isVisibleInViewport ? 'viewport-section-visible' : ''
+          }`}
+        >
+          {children}
+        </div>
       ) : (
         <div
           aria-hidden="true"
           className="w-full h-full min-h-[inherit] flex items-center justify-center py-16 px-4 border-t border-emerald-900/40"
         >
-          <div className="px-4 py-2 rounded-xl bg-[#03251c]/60 border border-emerald-800/50 text-xs text-emerald-300/80 font-medium">
+          <div className="px-4 py-2 rounded-xl bg-[#03251c]/60 border border-emerald-800/50 text-xs text-emerald-300/80 font-medium animate-pulse">
             Memuat bagian {label} saat dilihat...
           </div>
         </div>

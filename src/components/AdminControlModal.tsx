@@ -49,6 +49,7 @@ import {
 } from '../firebase';
 import {
   downloadJalanSehatPdfReport,
+  downloadRegistrationsCsvReport,
   downloadRegistrationsPdfReport,
 } from '../utils/pdfReportGenerator';
 
@@ -866,34 +867,55 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
           </div>
         ) : (
           <>
-            {/* 5 Admin CRUD Tabs Navigation */}
+            {/* 5 Admin CRUD Tabs Navigation + Quick CSV Download for Admin */}
             <div
               role="tablist"
               aria-label="Tab Modul Admin"
-              className="px-6 py-2.5 bg-[#02221a] border-b border-emerald-800 flex flex-wrap items-center gap-2 shrink-0"
+              className="px-6 py-2.5 bg-[#02221a] border-b border-emerald-800 flex flex-wrap items-center justify-between gap-2 shrink-0"
             >
-              {[
-                '1. Cabang Lomba, Skor & Medali (Edit/Hapus)',
-                '2. Jadwal, Titik Koordinat GPS & Baksos (Edit/Hapus)',
-                '3. Master Satker & Pendaftar (Edit/Hapus)',
-                '4. Video, Spanduk Satker, Kupon & Ucapan',
-                '5. Branding Logo HAB-81 & JSON GitHub',
-              ].map((label, idx) => (
-                <button
-                  key={label}
-                  role="tab"
-                  aria-selected={activeTab === idx}
-                  type="button"
-                  onClick={() => setActiveTab(idx)}
-                  className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer whitespace-nowrap ${
-                    activeTab === idx
-                      ? 'bg-amber-400 text-slate-950'
-                      : 'bg-[#021b15] text-slate-300 hover:text-white'
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
+              <div className="flex flex-wrap items-center gap-2">
+                {[
+                  '1. Cabang Lomba, Skor & Medali (Edit/Hapus)',
+                  '2. Jadwal, Titik Koordinat GPS & Baksos (Edit/Hapus)',
+                  '3. Master Satker & Pendaftar (Edit/Hapus)',
+                  '4. Video, Spanduk Satker, Kupon & Ucapan',
+                  '5. Branding Logo HAB-81 & JSON GitHub',
+                ].map((label, idx) => (
+                  <button
+                    key={label}
+                    role="tab"
+                    aria-selected={activeTab === idx}
+                    type="button"
+                    onClick={() => setActiveTab(idx)}
+                    className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer whitespace-nowrap ${
+                      activeTab === idx
+                        ? 'bg-amber-400 text-slate-950'
+                        : 'bg-[#021b15] text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              <button
+                type="button"
+                data-testid="admin-header-download-registrations-csv"
+                onClick={() => {
+                  downloadRegistrationsCsvReport(
+                    appState.registrations,
+                    'Semua Cabang Lomba'
+                  );
+                  notify(
+                    `File CSV Data Pendaftar (${appState.registrations.length} kontingen/peserta) berhasil diunduh!`
+                  );
+                }}
+                className="px-3.5 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-600 border border-amber-400/60 text-amber-200 font-bold text-xs flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-sm"
+                title="Unduh seluruh daftar pendaftar lomba dalam format CSV (Excel / Spreadsheet)"
+              >
+                <Download className="w-3.5 h-3.5 text-amber-300" />
+                <span>Unduh Data Pendaftar (.CSV)</span>
+              </button>
             </div>
 
             {/* Scrollable Tab Body */}
@@ -940,14 +962,17 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                         placeholder="Nama Cabang Lomba Baru *"
                         className="px-3 py-2 rounded-lg bg-[#03251c] border border-emerald-700 text-xs text-white"
                       />
-                      <input
-                        type="text"
+                      <select
                         aria-label="Kategori Lomba"
-                        value={newCompKategori}
+                        value={
+                          newCompKategori.toLowerCase().includes('olahraga') ? 'Olahraga' : 'Lomba'
+                        }
                         onChange={(e) => setNewCompKategori(e.target.value)}
-                        placeholder="Kategori (Olahraga / Seni & Budaya)"
                         className="px-3 py-2 rounded-lg bg-[#03251c] border border-emerald-700 text-xs text-white"
-                      />
+                      >
+                        <option value="Olahraga">Kategori Olahraga</option>
+                        <option value="Lomba">Kategori Lomba</option>
+                      </select>
                       <select
                         aria-label="Format Peserta"
                         value={newCompFormat}
@@ -1094,12 +1119,21 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() =>
-                                    setEditingCompId(isEditing ? null : comp.id)
-                                  }
-                                  className="px-2.5 py-1 rounded bg-[#03251c] hover:bg-emerald-900 border border-emerald-700 text-amber-300 text-[11px] font-semibold cursor-pointer"
+                                  onClick={() => {
+                                    if (isEditing) {
+                                      setEditingCompId(null);
+                                      notify(`✓ Perubahan pada "${comp.nama}" berhasil disimpan!`);
+                                    } else {
+                                      setEditingCompId(comp.id);
+                                    }
+                                  }}
+                                  className={`px-2.5 py-1 rounded border text-[11px] font-bold cursor-pointer ${
+                                    isEditing
+                                      ? 'bg-amber-400 text-slate-950 border-amber-300'
+                                      : 'bg-[#03251c] hover:bg-emerald-900 border-emerald-700 text-amber-300'
+                                  }`}
                                 >
-                                  {isEditing ? 'Tutup Edit' : 'Edit & Juknis'}
+                                  {isEditing ? '✓ Simpan Perubahan' : 'Edit & Juknis'}
                                 </button>
                                 <button
                                   type="button"
@@ -1124,17 +1158,22 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                                     placeholder="Nama Lomba"
                                     className="px-2.5 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
                                   />
-                                  <input
-                                    type="text"
-                                    value={comp.kategori}
+                                  <select
+                                    value={
+                                      comp.kategori.toLowerCase().includes('olahraga')
+                                        ? 'Olahraga'
+                                        : 'Lomba'
+                                    }
                                     onChange={(e) =>
                                       handleUpdateCompetitionField(comp.id, {
                                         kategori: e.target.value,
                                       })
                                     }
-                                    placeholder="Kategori"
                                     className="px-2.5 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
-                                  />
+                                  >
+                                    <option value="Olahraga">Kategori Olahraga</option>
+                                    <option value="Lomba">Kategori Lomba</option>
+                                  </select>
                                   <select
                                     value={comp.jenisPeserta}
                                     onChange={(e) =>
@@ -1617,10 +1656,21 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                             <div className="flex items-center gap-1.5 shrink-0">
                               <button
                                 type="button"
-                                onClick={() => setEditingSchId(isEditing ? null : s.id)}
-                                className="px-2.5 py-1 rounded bg-[#03251c] border border-emerald-700 text-amber-300 text-[11px] font-semibold cursor-pointer"
+                                onClick={() => {
+                                  if (isEditing) {
+                                    setEditingSchId(null);
+                                    notify(`✓ Perubahan jadwal "${s.judul}" berhasil disimpan!`);
+                                  } else {
+                                    setEditingSchId(s.id);
+                                  }
+                                }}
+                                className={`px-2.5 py-1 rounded border text-[11px] font-bold cursor-pointer ${
+                                  isEditing
+                                    ? 'bg-amber-400 text-slate-950 border-amber-300'
+                                    : 'bg-[#03251c] border-emerald-700 text-amber-300'
+                                }`}
                               >
-                                {isEditing ? 'Tutup Edit' : 'Edit'}
+                                {isEditing ? '✓ Simpan Perubahan' : 'Edit'}
                               </button>
                               <button
                                 type="button"
@@ -1777,6 +1827,17 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                                 placeholder="Nama Titik Lokasi"
                                 className="flex-1 px-2 py-1 rounded bg-[#021b15] border border-emerald-700 text-white font-bold text-xs"
                               />
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  notify(`✓ Titik koordinat "${v.nama}" berhasil disimpan!`)
+                                }
+                                className="px-2.5 py-1 rounded bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-[11px] flex items-center gap-1 cursor-pointer shrink-0"
+                                title="Simpan Perubahan Titik Koordinat"
+                              >
+                                <Check className="w-3 h-3" />
+                                <span>Simpan</span>
+                              </button>
                               <button
                                 type="button"
                                 onClick={() => handleDeleteVenue(v.id)}
@@ -2060,12 +2121,36 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                         </select>
                         <button
                           type="button"
-                          onClick={async () => {
+                          data-testid="admin-tab-download-registrations-csv"
+                          onClick={() => {
                             const filtered =
                               regPdfFilter === 'ALL'
                                 ? appState.registrations
                                 : appState.registrations.filter(
                                     (r) => r.competitionId === regPdfFilter
+                                  );
+                            const label =
+                              regPdfFilter === 'ALL'
+                                ? 'Semua Cabang Lomba'
+                                : appState.competitions.find((c) => c.id === regPdfFilter)?.nama ||
+                                  'Cabang Terpilih';
+                            downloadRegistrationsCsvReport(filtered, label);
+                            notify(`Data Pendaftar CSV (${label}) berhasil diunduh!`);
+                          }}
+                          className="px-3.5 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 border border-amber-400/50 text-amber-200 font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-sm"
+                          title="Unduh Daftar Pendaftar dalam format CSV untuk Excel / Google Sheets"
+                        >
+                          <Download className="w-3.5 h-3.5 text-amber-300" />
+                          <span>Unduh Data Pendaftar (.CSV)</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const filtered =
+                              regPdfFilter === 'ALL'
+                                ? appState.registrations
+                                : appState.registrations.filter(
+                                     (r) => r.competitionId === regPdfFilter
                                   );
                             const label =
                               regPdfFilter === 'ALL'
@@ -2108,10 +2193,23 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                               <div className="flex items-center gap-1.5 shrink-0">
                                 <button
                                   type="button"
-                                  onClick={() => setEditingRegId(isEditing ? null : reg.id)}
-                                  className="px-2.5 py-1 rounded bg-[#021b15] border border-emerald-700 text-amber-300 text-[11px] font-semibold cursor-pointer"
+                                  onClick={() => {
+                                    if (isEditing) {
+                                      setEditingRegId(null);
+                                      notify(
+                                        `✓ Perubahan data pendaftar "${reg.namaTimAtauPeserta}" berhasil disimpan!`
+                                      );
+                                    } else {
+                                      setEditingRegId(reg.id);
+                                    }
+                                  }}
+                                  className={`px-2.5 py-1 rounded border text-[11px] font-bold cursor-pointer ${
+                                    isEditing
+                                      ? 'bg-amber-400 text-slate-950 border-amber-300'
+                                      : 'bg-[#021b15] border-emerald-700 text-amber-300'
+                                  }`}
                                 >
-                                  {isEditing ? 'Tutup Edit' : 'Edit'}
+                                  {isEditing ? '✓ Simpan Perubahan' : 'Edit'}
                                 </button>
                                 <button
                                   type="button"
@@ -2356,10 +2454,21 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => setEditingVidId(isEditing ? null : vid.id)}
-                                  className="px-2.5 py-1 rounded bg-[#021b15] border border-emerald-700 text-amber-300 text-[11px] font-semibold cursor-pointer"
+                                  onClick={() => {
+                                    if (isEditing) {
+                                      setEditingVidId(null);
+                                      notify(`✓ Perubahan video "${vid.judul}" berhasil disimpan!`);
+                                    } else {
+                                      setEditingVidId(vid.id);
+                                    }
+                                  }}
+                                  className={`px-2.5 py-1 rounded border text-[11px] font-bold cursor-pointer ${
+                                    isEditing
+                                      ? 'bg-amber-400 text-slate-950 border-amber-300'
+                                      : 'bg-[#021b15] border-emerald-700 text-amber-300'
+                                  }`}
                                 >
-                                  {isEditing ? 'Tutup Edit' : 'Edit'}
+                                  {isEditing ? '✓ Simpan Perubahan' : 'Edit'}
                                 </button>
                                 <button
                                   type="button"
@@ -2570,12 +2679,23 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                               <div className="flex items-center gap-1.5 shrink-0">
                                 <button
                                   type="button"
-                                  onClick={() =>
-                                    setEditingBannerId(isEditing ? null : bnr.id)
-                                  }
-                                  className="px-2.5 py-1 rounded bg-[#021b15] border border-emerald-700 text-amber-300 text-[11px] font-semibold cursor-pointer"
+                                  onClick={() => {
+                                    if (isEditing) {
+                                      setEditingBannerId(null);
+                                      notify(
+                                        `✓ Perubahan spanduk "${bnr.judul}" berhasil disimpan!`
+                                      );
+                                    } else {
+                                      setEditingBannerId(bnr.id);
+                                    }
+                                  }}
+                                  className={`px-2.5 py-1 rounded border text-[11px] font-bold cursor-pointer ${
+                                    isEditing
+                                      ? 'bg-amber-400 text-slate-950 border-amber-300'
+                                      : 'bg-[#021b15] border-emerald-700 text-amber-300'
+                                  }`}
                                 >
-                                  {isEditing ? 'Tutup Edit' : 'Edit'}
+                                  {isEditing ? '✓ Simpan Perubahan' : 'Edit'}
                                 </button>
                                 <button
                                   type="button"
@@ -2777,10 +2897,23 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                                 <div className="flex items-center gap-2 shrink-0">
                                   <button
                                     type="button"
-                                    onClick={() => setEditingCouponId(isEditing ? null : c.id)}
-                                    className="text-amber-300 hover:text-amber-200 cursor-pointer"
+                                    onClick={() => {
+                                      if (isEditing) {
+                                        setEditingCouponId(null);
+                                        notify(
+                                          `✓ Perubahan kupon ${c.nomorKupon} (${c.namaPeserta}) berhasil disimpan!`
+                                        );
+                                      } else {
+                                        setEditingCouponId(c.id);
+                                      }
+                                    }}
+                                    className={`px-2.5 py-1 rounded text-[11px] font-bold cursor-pointer ${
+                                      isEditing
+                                        ? 'bg-amber-400 text-slate-950'
+                                        : 'text-amber-300 hover:text-amber-200 border border-emerald-700 bg-[#021b15]'
+                                    }`}
                                   >
-                                    {isEditing ? 'Tutup' : 'Edit'}
+                                    {isEditing ? '✓ Simpan' : 'Edit'}
                                   </button>
                                   <button
                                     type="button"
@@ -2919,10 +3052,23 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={() => setEditingMsgId(isEditing ? null : m.id)}
-                                    className="px-2 py-1 rounded bg-[#021b15] border border-emerald-700 text-amber-300 text-[11px] cursor-pointer"
+                                    onClick={() => {
+                                      if (isEditing) {
+                                        setEditingMsgId(null);
+                                        notify(
+                                          `✓ Perubahan ucapan dari "${m.nama}" berhasil disimpan!`
+                                        );
+                                      } else {
+                                        setEditingMsgId(m.id);
+                                      }
+                                    }}
+                                    className={`px-2.5 py-1 rounded border text-[11px] font-bold cursor-pointer ${
+                                      isEditing
+                                        ? 'bg-amber-400 text-slate-950 border-amber-300'
+                                        : 'bg-[#021b15] border-emerald-700 text-amber-300'
+                                    }`}
                                   >
-                                    {isEditing ? 'Tutup' : 'Edit'}
+                                    {isEditing ? '✓ Simpan' : 'Edit'}
                                   </button>
                                   <button
                                     type="button"
@@ -3696,15 +3842,56 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
               )}
             </div>
 
-            {/* Bottom Modal Footer */}
-            <div className="px-6 py-3 bg-[#021b15] border-t border-emerald-800 flex items-center justify-between text-xs text-slate-400 shrink-0">
+            {/* Bottom Modal Footer with Explicit Save Button */}
+            <div className="px-6 py-3 bg-[#021b15] border-t border-emerald-800 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400 shrink-0">
               <span className="flex items-center gap-1.5 text-emerald-300">
                 <Cloud className="w-3.5 h-3.5 text-amber-300" />
                 {firebaseConnected
                   ? `Firebase Cloud Sync Aktif (${ADMIN_EMAIL}) + Backup localStorage`
                   : 'Auto-Persistence Aktif (localStorage)'}
               </span>
-              <span>Pintasan Keyboard: Ctrl + Shift + A</span>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  data-testid="admin-footer-save-all"
+                  onClick={async () => {
+                    setEditingCompId(null);
+                    setEditingSchId(null);
+                    setEditingRegId(null);
+                    setEditingVidId(null);
+                    setEditingBannerId(null);
+                    setEditingCouponId(null);
+                    setEditingMsgId(null);
+                    setIsSyncingCloud(true);
+                    try {
+                      await syncFullStateToCloud(appState);
+                      notify(
+                        '✓ Seluruh perubahan Admin berhasil disimpan permanen ke Cloud & Perangkat!'
+                      );
+                    } finally {
+                      setIsSyncingCloud(false);
+                    }
+                  }}
+                  className="px-4 py-2 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-md"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>
+                    {isSyncingCloud ? 'Menyimpan...' : 'Simpan Semua Perubahan'}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await syncFullStateToCloud(appState);
+                    onClose();
+                  }}
+                  className="px-3.5 py-2 rounded-lg bg-emerald-800 hover:bg-emerald-700 border border-emerald-600 text-white font-semibold text-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Check className="w-3.5 h-3.5 text-amber-300" />
+                  <span>Simpan & Tutup Panel</span>
+                </button>
+              </div>
             </div>
           </>
         )}

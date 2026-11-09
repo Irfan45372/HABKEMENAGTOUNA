@@ -932,8 +932,8 @@ export const HeroScene3D: React.FC<HeroScene3DProps> = ({
                 <p className="text-lg sm:text-xl font-semibold text-amber-300 tracking-wide [text-wrap:balance]">
                   {branding.officialSubtitle}
                 </p>
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-emerald-950/90 border border-amber-400/40 text-xs font-bold tracking-wider text-amber-300 uppercase">
-                  <span>by HUMAS KEMENTERIAN AGAMA KABUPATEN TOJO UNA UNA</span>
+                <div className="text-[8px] font-normal tracking-wide text-slate-400/45 uppercase select-none">
+                  by HUMAS KEMENTERIAN AGAMA KABUPATEN TOJO UNA UNA
                 </div>
                 <p className="text-sm sm:text-base text-slate-300 leading-relaxed max-w-xl">
                   “{branding.officialTagline}”
