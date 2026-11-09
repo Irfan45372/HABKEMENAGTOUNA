@@ -143,8 +143,6 @@ export const PanitiaInfoModal: React.FC<PanitiaInfoModalProps> = ({
     };
   }, [readingLetterState]);
 
-  if (!isOpen && !isStandalonePage) return null;
-
   const announcements =
     branding.runningTextItems.length > 0
       ? branding.runningTextItems
@@ -172,6 +170,8 @@ export const PanitiaInfoModal: React.FC<PanitiaInfoModalProps> = ({
       }
     };
   }, [activeInlineLetter?.fileDataUrl]);
+
+  if (!isOpen && !isStandalonePage) return null;
 
   // Determine highlighted announcement index from URL (?pengumuman=1) or default to first (0)
   const highlightedAnnouncementIndex = (() => {
