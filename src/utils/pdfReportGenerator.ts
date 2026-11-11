@@ -173,11 +173,18 @@ export async function downloadRegistrationsPdfReport(
   const logoDataUrl = await loadKemenagLogoDataUrl(branding);
   const printTime = formatWitaPrintTimestamp();
 
+  const lowerFilter = filterLabel.toLowerCase();
+  const reportHeading = lowerFilter.includes('olahraga')
+    ? 'LAPORAN RESMI DAFTAR PESERTA KATEGORI OLAHRAGA HAB KE-81'
+    : lowerFilter.includes('kategori lomba')
+    ? 'LAPORAN RESMI DAFTAR PESERTA KATEGORI LOMBA HAB KE-81'
+    : 'LAPORAN RESMI DAFTAR PESERTA LOMBA & PORSENI HAB KE-81';
+
   const startY = drawOfficialLetterhead(
     doc,
     logoDataUrl,
-    'LAPORAN RESMI DAFTAR PESERTA LOMBA & PORSENI HAB KE-81',
-    `Filter Cabang Lomba: ${filterLabel}  |  Total Terdaftar: ${registrations.length} Peserta/Tim  |  Dicetak: ${printTime}`
+    reportHeading,
+    `Kategori / Cabang: ${filterLabel}  |  Total Terdaftar: ${registrations.length} Peserta/Tim  |  Dicetak: ${printTime}`
   );
 
   const tableRows = registrations.map((reg, idx) => [

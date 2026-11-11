@@ -43,7 +43,7 @@ export const ScheduleBaksosSection: React.FC<ScheduleBaksosSectionProps> = ({
     <section
       id="jadwal-acara"
       aria-label="Jadwal Rangkaian Acara Dinamis dan Dashboard Dampak Bakti Sosial"
-      className="py-16 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto border-t border-emerald-900/70 space-y-16"
+      className="py-10 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto border-t border-emerald-900/70 space-y-10"
     >
       {/* PART A: DYNAMIC MULTI-CATEGORY SCHEDULE TIMELINE */}
       <div>
@@ -91,7 +91,7 @@ export const ScheduleBaksosSection: React.FC<ScheduleBaksosSectionProps> = ({
             Belum ada agenda pada kategori ini. Admin dapat menambahkan jadwal baru melalui Panel Kontrol.
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 max-h-[680px] overflow-y-auto pr-1">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 max-h-[420px] overflow-y-auto pr-1">
             {filteredSchedules.map((item) => {
               const statusColor =
                 item.status === 'Sedang Berlangsung'
@@ -187,7 +187,7 @@ export const ScheduleBaksosSection: React.FC<ScheduleBaksosSectionProps> = ({
           </button>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-h-[560px] overflow-y-auto pr-1">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-h-[380px] overflow-y-auto pr-1">
           {baksosMetrics.map((metric) => {
             const pct = Math.min(
               100,

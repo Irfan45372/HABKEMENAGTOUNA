@@ -400,7 +400,7 @@ export const SatkerBannerSection: React.FC<SatkerBannerSectionProps> = ({
     <section
       id="spanduk-satker"
       aria-labelledby="spanduk-satker-heading"
-      className="py-16 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto space-y-8 border-t border-emerald-900/80"
+      className="py-10 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto space-y-6 border-t border-emerald-900/80"
     >
       {/* Header & Top Action Bar */}
       <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6">
@@ -865,7 +865,7 @@ export const SatkerBannerSection: React.FC<SatkerBannerSectionProps> = ({
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-h-[820px] overflow-y-auto pr-1">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-h-[560px] overflow-y-auto pr-1.5">
           {visibleBanners.map((item) => {
             const isEditing = editingId === item.id;
             const isBroken = brokenIds[item.id];

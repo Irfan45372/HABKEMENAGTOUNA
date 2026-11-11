@@ -21,6 +21,11 @@ export interface Competition {
   lokasiId: string;
   koordinator: string;
   catatan?: string;
+  baganUrl?: string;
+  baganFileName?: string;
+  baganFileType?: 'pdf' | 'word' | 'image' | 'link';
+  baganCatatan?: string;
+  baganUpdatedAt?: string;
 }
 
 export interface ParticipantRegistration {

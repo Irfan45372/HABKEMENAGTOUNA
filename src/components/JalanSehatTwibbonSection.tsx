@@ -824,7 +824,7 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
     <section
       id="jalan-sehat"
       aria-label="Jalan Sehat Kerukunan, Generator Kupon QR Digital & Twibbon Studio"
-      className="py-16 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto border-t border-emerald-900/70 space-y-8"
+      className="py-10 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto border-t border-emerald-900/70 space-y-6"
     >
       {/* Header & Mode Switcher */}
       <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
@@ -913,9 +913,9 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
 
       {/* MODE 1: JALAN SEHAT QR COUPON GENERATOR */}
       {activeMode === 'kupon' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           {/* Left 5 Cols: Quick Registration Form & Active Draw Queue */}
-          <div className="lg:col-span-5 bg-[#03251c] border border-emerald-800/80 rounded-2xl p-6 space-y-4">
+          <div className="lg:col-span-5 bg-[#03251c] border border-emerald-800/80 rounded-2xl p-6 space-y-4 max-h-[580px] overflow-y-auto">
             <form onSubmit={handleGenerateCoupon} className="space-y-4">
               <div className="border-b border-emerald-800/70 pb-3">
                 <h3 className="text-base font-bold text-white flex items-center gap-2">
@@ -1109,7 +1109,7 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
           </div>
 
           {/* Right 7 Cols: Live Digital Ticket Canvas, Edit Participant Data & Download */}
-          <div className="lg:col-span-7 bg-[#03251c] border border-emerald-800/80 rounded-2xl p-6 space-y-4">
+          <div className="lg:col-span-7 bg-[#03251c] border border-emerald-800/80 rounded-2xl p-6 space-y-4 max-h-[580px] overflow-y-auto">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-emerald-800/70 pb-3">
               <div>
                 <div className="text-xs text-amber-300 font-semibold">

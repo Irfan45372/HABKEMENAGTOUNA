@@ -332,7 +332,7 @@ export const VenueMap3D: React.FC<VenueMap3DProps> = ({
     <section
       id="peta-lokasi"
       aria-label="Peta GPS Satelit & Titik Koordinat Kegiatan Kabupaten Tojo Una-Una"
-      className="py-16 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto border-t border-emerald-900/70"
+      className="py-10 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto border-t border-emerald-900/70"
     >
       {/* Section Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-6">
@@ -832,7 +832,7 @@ export const VenueMap3D: React.FC<VenueMap3DProps> = ({
         </div>
 
         {/* Right: Selected Checkpoint Details, Active Competitions & Schedule */}
-        <div className="lg:col-span-5 bg-[#03251c] border border-emerald-800/80 rounded-2xl p-6 flex flex-col justify-between space-y-5 shadow-xl">
+        <div className="lg:col-span-5 bg-[#03251c] border border-emerald-800/80 rounded-2xl p-6 flex flex-col justify-between space-y-5 shadow-xl max-h-[540px] overflow-y-auto">
           {activeVenue ? (
             <>
               <div className="space-y-4">

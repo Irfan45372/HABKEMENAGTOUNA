@@ -232,7 +232,7 @@ export const VideoGallerySection: React.FC<VideoGallerySectionProps> = ({
     <section
       id="galeri-video"
       aria-label="Galeri Video Dokumentasi, Lomba Video Satker & Link YouTube"
-      className="py-16 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto border-t border-emerald-900/70"
+      className="py-10 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto border-t border-emerald-900/70"
     >
       {/* Header Section */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-6">
@@ -568,7 +568,7 @@ export const VideoGallerySection: React.FC<VideoGallerySectionProps> = ({
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           {/* Left 7 Cols: Active Video Player + Optional Satker Banner + Admin Edit/Delete */}
-          <div className="lg:col-span-7 bg-[#03251c] border border-emerald-800/80 rounded-2xl overflow-hidden shadow-xl">
+          <div className="lg:col-span-7 bg-[#03251c] border border-emerald-800/80 rounded-2xl overflow-hidden shadow-xl max-h-[560px] overflow-y-auto">
             <div className="aspect-video w-full bg-black relative">
               {activeEmbedUrl ? (
                 <iframe

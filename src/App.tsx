@@ -40,7 +40,6 @@ import {
   deleteSatkerBannerFromCloud,
   deleteVideoFromCloud,
   doc,
-  ensureCollectionsSeededToCloud,
   getDocFromServer,
   handleFirestoreError,
   onAuthStateChanged,
@@ -275,39 +274,55 @@ export default function App() {
     }
   };
 
-  // Sync document title & OpenGraph description with the active Pengumuman Redaksi (4-6 words + full redaksi)
+  // Sync document title & OpenGraph description (defaults to official HAB Ke-81 title, or active Pengumuman when on Pengumuman page)
   useEffect(() => {
     try {
-      const items = appState.branding.runningTextItems;
-      if (!items || items.length === 0) return;
-
-      const params = new URLSearchParams(window.location.search);
-      const rawIdx = parseInt(params.get('pengumuman') || '1', 10);
-      const targetIdx =
-        !Number.isNaN(rawIdx) && rawIdx >= 1 && rawIdx <= items.length ? rawIdx - 1 : 0;
-      const activeRedaksi = items[targetIdx] || items[0];
-      const snippet6Words = getAnnouncementSnippetWords(activeRedaksi, 6);
+      if (isJournalPageOpen) return;
 
       const setMetaContent = (selector: string, content: string) => {
         const el = document.querySelector(selector);
         if (el) el.setAttribute('content', content);
       };
 
-      const ogTitle = `Pengumuman Panitia: ${snippet6Words} — HAB ke-81 Kemenag Touna`;
-      const ogDesc = `${activeRedaksi} — Panitia HAB ke-81 Kemenag Kab. Tojo Una-Una Tahun 2027.`;
+      const defaultTitle = 'Hari Amal Bakti Ke-81 Kemenag Kabupaten Tojo Una-Una Tahun 2027';
+      const defaultDesc =
+        'Portal Resmi Peringatan Hari Amal Bakti Ke-81 Kementerian Agama Republik Indonesia — Kantor Kementerian Agama Kabupaten Tojo Una-Una Tahun 2027.';
 
-      if (isAnnouncementPageOpen || panitiaInfoOpen) {
+      const items = appState.branding.runningTextItems;
+      if ((isAnnouncementPageOpen || panitiaInfoOpen) && items && items.length > 0) {
+        const params = new URLSearchParams(window.location.search);
+        const rawIdx = parseInt(params.get('pengumuman') || '1', 10);
+        const targetIdx =
+          !Number.isNaN(rawIdx) && rawIdx >= 1 && rawIdx <= items.length ? rawIdx - 1 : 0;
+        const activeRedaksi = items[targetIdx] || items[0];
+        const snippet6Words = getAnnouncementSnippetWords(activeRedaksi, 6);
+
+        const ogTitle = `${defaultTitle} — ${snippet6Words}`;
+        const ogDesc = `${activeRedaksi} — Panitia HAB ke-81 Kemenag Kab. Tojo Una-Una Tahun 2027.`;
+
         document.title = ogTitle;
+        setMetaContent('meta[property="og:title"]', ogTitle);
+        setMetaContent('meta[name="twitter:title"]', ogTitle);
+        setMetaContent('meta[property="og:description"]', ogDesc);
+        setMetaContent('meta[name="twitter:description"]', ogDesc);
+        setMetaContent('meta[name="description"]', ogDesc);
+      } else {
+        document.title = defaultTitle;
+        setMetaContent('meta[property="og:title"]', defaultTitle);
+        setMetaContent('meta[name="twitter:title"]', defaultTitle);
+        setMetaContent('meta[property="og:description"]', defaultDesc);
+        setMetaContent('meta[name="twitter:description"]', defaultDesc);
+        setMetaContent('meta[name="description"]', defaultDesc);
       }
-      setMetaContent('meta[property="og:title"]', ogTitle);
-      setMetaContent('meta[name="twitter:title"]', ogTitle);
-      setMetaContent('meta[property="og:description"]', ogDesc);
-      setMetaContent('meta[name="twitter:description"]', ogDesc);
-      setMetaContent('meta[name="description"]', ogDesc);
     } catch {
       // Ignore DOM meta update errors
     }
-  }, [appState.branding.runningTextItems, isAnnouncementPageOpen, panitiaInfoOpen]);
+  }, [
+    appState.branding.runningTextItems,
+    isAnnouncementPageOpen,
+    panitiaInfoOpen,
+    isJournalPageOpen,
+  ]);
 
   // Listen to Firebase Auth state for Cloud Firestore permissions (Admin Mode UI still requires PIN)
   useEffect(() => {
@@ -337,15 +352,11 @@ export default function App() {
         if (!mainSnap.exists()) {
           // First time initialization: seed Firestore with current state
           await seedInitialStateToCloud(initialStateRef.current);
-        } else {
-          // Ensure all collections (coupons, registrations, messages, videos, banners, journals)
-          // are seeded if any collection is empty, and upgrade old untouched default NIP 1975->1974
-          await ensureCollectionsSeededToCloud(initialStateRef.current);
         }
         setFirebaseConnected(true);
       } catch (error) {
         if (error instanceof Error && error.message.includes('the client is offline')) {
-          console.error('Please check your Firebase configuration. Client is offline.');
+          console.warn('Please check your Firebase configuration. Client is offline.');
         }
         // Fallback: check GitHub raw state if Firestore is not reachable yet
         const hasLocal = window.localStorage.getItem(STORAGE_KEY);

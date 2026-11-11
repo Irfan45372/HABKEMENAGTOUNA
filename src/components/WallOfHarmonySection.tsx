@@ -171,7 +171,7 @@ export const WallOfHarmonySection: React.FC<WallOfHarmonySectionProps> = ({
     <section
       id="aspirasi-ucapan"
       aria-label="Kotak Saran, Aspirasi dan Wall of Harmony"
-      className="py-16 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto border-t border-emerald-900/70"
+      className="py-10 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto border-t border-emerald-900/70"
     >
       <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 mb-6">
         <div>
@@ -275,11 +275,11 @@ export const WallOfHarmonySection: React.FC<WallOfHarmonySectionProps> = ({
         </form>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Left 5 Cols: Submission Form with Optional Banner Ucapan Satker */}
         <form
           onSubmit={handleSubmit}
-          className="lg:col-span-5 bg-[#03251c] border border-emerald-800/80 rounded-2xl p-6 space-y-4"
+          className="lg:col-span-5 bg-[#03251c] border border-emerald-800/80 rounded-2xl p-6 space-y-4 max-h-[560px] overflow-y-auto"
         >
           <div className="border-b border-emerald-800/70 pb-3">
             <h3 className="text-base font-bold text-white flex items-center gap-2">
@@ -441,7 +441,7 @@ export const WallOfHarmonySection: React.FC<WallOfHarmonySectionProps> = ({
         </form>
 
         {/* Right 7 Cols: Live Wall of Harmony & Satker Banners */}
-        <div className="lg:col-span-7 grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[680px] overflow-y-auto pr-1 content-start">
+        <div className="lg:col-span-7 grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[560px] overflow-y-auto pr-1 content-start">
           {approvedMessages.map((msg) => {
             const isEditing = isAdminUnlocked && editingMsgId === msg.id;
             return (

@@ -17,6 +17,7 @@ import {
   onSnapshot,
   writeBatch,
   getDocs,
+  setLogLevel,
 } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 import {
@@ -29,12 +30,49 @@ import {
   VideoItem,
 } from './types/hab';
 
+// Prevent internal @firebase/firestore backoff/quota logs from triggering uncaught console.error overlays
+try {
+  setLogLevel('silent');
+} catch {
+  // Ignore if setLogLevel is unavailable
+}
+
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
 export const ADMIN_EMAIL = 'kakakkuganteng@gmail.com';
+
+const QUOTA_EXHAUSTED_STORAGE_KEY = 'HAB81_FIRESTORE_WRITE_QUOTA_DATE';
+
+// Clear any previous session flag on fresh load so upgrading the database immediately restores writes on refresh
+try {
+  window.sessionStorage.removeItem(QUOTA_EXHAUSTED_STORAGE_KEY);
+} catch {
+  // Ignore storage errors
+}
+
+let writeQuotaExhausted = false;
+
+function markWriteQuotaExhausted(): void {
+  writeQuotaExhausted = true;
+}
+
+export function isFirestoreWriteQuotaExhausted(): boolean {
+  return writeQuotaExhausted;
+}
+
+function isQuotaError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error);
+  const code = (error as { code?: string })?.code || '';
+  return (
+    code === 'resource-exhausted' ||
+    msg.includes('resource-exhausted') ||
+    msg.includes('Quota limit exceeded') ||
+    msg.includes('Quota exceeded')
+  );
+}
 
 export enum OperationType {
   CREATE = 'create',
@@ -69,6 +107,14 @@ export function handleFirestoreError(
   operationType: OperationType,
   path: string | null
 ): void {
+  if (isQuotaError(error)) {
+    markWriteQuotaExhausted();
+    console.warn(
+      `[Cloud Sync] Kuota tulis harian Firestore (Free Tier) telah penuh untuk hari ini pada path "${path}". Data tetap tersimpan aman di penyimpanan lokal browser dan sinkronisasi cloud akan aktif kembali saat kuota harian di-reset esok hari.`
+    );
+    return;
+  }
+
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
@@ -88,7 +134,7 @@ export function handleFirestoreError(
     operationType,
     path,
   };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  console.warn('Firestore Error: ', JSON.stringify(errInfo));
 }
 
 /**
@@ -103,8 +149,12 @@ export async function testFirestoreConnection(): Promise<boolean> {
     await getDocFromServer(doc(db, 'portalConfig', 'main'));
     return true;
   } catch (error) {
+    if (isQuotaError(error)) {
+      markWriteQuotaExhausted();
+      return false;
+    }
     if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.error('Please check your Firebase configuration. Client is offline.');
+      console.warn('Please check your Firebase configuration. Client is offline.');
     }
     return false;
   }
@@ -115,7 +165,7 @@ export async function signInWithGoogleAdmin(): Promise<User | null> {
     const res = await signInWithPopup(auth, googleProvider);
     return res.user;
   } catch (error) {
-    console.error('Google Sign-In failed:', error);
+    console.warn('Google Sign-In failed:', error);
     return null;
   }
 }
@@ -124,7 +174,7 @@ export async function signOutFirebase(): Promise<void> {
   try {
     await signOut(auth);
   } catch (error) {
-    console.error('Sign-Out failed:', error);
+    console.warn('Sign-Out failed:', error);
   }
 }
 
@@ -132,6 +182,7 @@ export { onAuthStateChanged, onSnapshot, collection, doc, getDocFromServer };
 export type { User };
 
 export async function savePortalConfigToCloud(state: AppState): Promise<void> {
+  if (writeQuotaExhausted) return;
   const path = 'portalConfig/main';
   try {
     const payload = stripUndefined({
@@ -152,6 +203,7 @@ export async function savePortalConfigToCloud(state: AppState): Promise<void> {
 }
 
 export async function saveRegistrationToCloud(reg: ParticipantRegistration): Promise<void> {
+  if (writeQuotaExhausted) return;
   const path = `registrations/${reg.id}`;
   try {
     await setDoc(doc(db, 'registrations', reg.id), stripUndefined(reg));
@@ -161,6 +213,7 @@ export async function saveRegistrationToCloud(reg: ParticipantRegistration): Pro
 }
 
 export async function deleteRegistrationFromCloud(id: string): Promise<void> {
+  if (writeQuotaExhausted) return;
   const path = `registrations/${id}`;
   try {
     await deleteDoc(doc(db, 'registrations', id));
@@ -170,6 +223,7 @@ export async function deleteRegistrationFromCloud(id: string): Promise<void> {
 }
 
 export async function saveCouponToCloud(coupon: JalanSehatCoupon): Promise<void> {
+  if (writeQuotaExhausted) return;
   const path = `coupons/${coupon.id}`;
   try {
     await setDoc(doc(db, 'coupons', coupon.id), stripUndefined(coupon));
@@ -179,6 +233,7 @@ export async function saveCouponToCloud(coupon: JalanSehatCoupon): Promise<void>
 }
 
 export async function deleteCouponFromCloud(id: string): Promise<void> {
+  if (writeQuotaExhausted) return;
   const path = `coupons/${id}`;
   try {
     await deleteDoc(doc(db, 'coupons', id));
@@ -188,6 +243,7 @@ export async function deleteCouponFromCloud(id: string): Promise<void> {
 }
 
 export async function saveHarmonyMessageToCloud(msg: HarmonyMessage): Promise<void> {
+  if (writeQuotaExhausted) return;
   const path = `messages/${msg.id}`;
   try {
     await setDoc(doc(db, 'messages', msg.id), stripUndefined(msg));
@@ -197,6 +253,7 @@ export async function saveHarmonyMessageToCloud(msg: HarmonyMessage): Promise<vo
 }
 
 export async function deleteHarmonyMessageFromCloud(id: string): Promise<void> {
+  if (writeQuotaExhausted) return;
   const path = `messages/${id}`;
   try {
     await deleteDoc(doc(db, 'messages', id));
@@ -206,6 +263,7 @@ export async function deleteHarmonyMessageFromCloud(id: string): Promise<void> {
 }
 
 export async function saveVideoToCloud(video: VideoItem): Promise<void> {
+  if (writeQuotaExhausted) return;
   const path = `videos/${video.id}`;
   try {
     await setDoc(doc(db, 'videos', video.id), stripUndefined(video));
@@ -215,6 +273,7 @@ export async function saveVideoToCloud(video: VideoItem): Promise<void> {
 }
 
 export async function deleteVideoFromCloud(id: string): Promise<void> {
+  if (writeQuotaExhausted) return;
   const path = `videos/${id}`;
   try {
     await deleteDoc(doc(db, 'videos', id));
@@ -224,6 +283,7 @@ export async function deleteVideoFromCloud(id: string): Promise<void> {
 }
 
 export async function saveSatkerBannerToCloud(banner: SatkerBannerItem): Promise<void> {
+  if (writeQuotaExhausted) return;
   const path = `satkerBanners/${banner.id}`;
   try {
     await setDoc(doc(db, 'satkerBanners', banner.id), stripUndefined(banner));
@@ -233,6 +293,7 @@ export async function saveSatkerBannerToCloud(banner: SatkerBannerItem): Promise
 }
 
 export async function deleteSatkerBannerFromCloud(id: string): Promise<void> {
+  if (writeQuotaExhausted) return;
   const path = `satkerBanners/${id}`;
   try {
     await deleteDoc(doc(db, 'satkerBanners', id));
@@ -242,6 +303,7 @@ export async function deleteSatkerBannerFromCloud(id: string): Promise<void> {
 }
 
 export async function saveJournalToCloud(journal: JournalArticle): Promise<void> {
+  if (writeQuotaExhausted) return;
   const path = `journals/${journal.id}`;
   try {
     await setDoc(doc(db, 'journals', journal.id), stripUndefined(journal));
@@ -251,6 +313,7 @@ export async function saveJournalToCloud(journal: JournalArticle): Promise<void>
 }
 
 export async function deleteJournalFromCloud(id: string): Promise<void> {
+  if (writeQuotaExhausted) return;
   const path = `journals/${id}`;
   try {
     await deleteDoc(doc(db, 'journals', id));
@@ -263,6 +326,7 @@ export async function deleteJournalFromCloud(id: string): Promise<void> {
  * Seeds Firestore when portalConfig/main does not exist yet.
  */
 export async function seedInitialStateToCloud(state: AppState): Promise<void> {
+  if (writeQuotaExhausted) return;
   try {
     await savePortalConfigToCloud(state);
     await ensureCollectionsSeededToCloud(state);
@@ -276,6 +340,7 @@ export async function seedInitialStateToCloud(state: AppState): Promise<void> {
  * while NEVER overwriting any existing documents modified by Admin or Users.
  */
 export async function ensureCollectionsSeededToCloud(state: AppState): Promise<void> {
+  if (writeQuotaExhausted) return;
   try {
     const collectionsToCheck: Array<{
       name: string;
@@ -316,6 +381,7 @@ export async function ensureCollectionsSeededToCloud(state: AppState): Promise<v
  * to Firestore collections.
  */
 export async function syncFullStateToCloud(newState: AppState, prevState?: AppState): Promise<void> {
+  if (writeQuotaExhausted) return;
   try {
     await savePortalConfigToCloud(newState);
 
@@ -324,9 +390,11 @@ export async function syncFullStateToCloud(newState: AppState, prevState?: AppSt
       newItems: T[],
       oldItems?: T[]
     ) => {
+      if (writeQuotaExhausted) return;
       const newIds = new Set(newItems.map((i) => i.id));
       // Write new or changed items
       for (const item of newItems) {
+        if (writeQuotaExhausted) return;
         const prevItem = oldItems?.find((o) => o.id === item.id);
         if (!prevItem || JSON.stringify(prevItem) !== JSON.stringify(item)) {
           await setDoc(doc(db, colName, item.id), stripUndefined(item));
@@ -335,6 +403,7 @@ export async function syncFullStateToCloud(newState: AppState, prevState?: AppSt
       // Delete removed items
       if (oldItems) {
         for (const oldItem of oldItems) {
+          if (writeQuotaExhausted) return;
           if (!newIds.has(oldItem.id)) {
             await deleteDoc(doc(db, colName, oldItem.id));
           }
@@ -342,6 +411,7 @@ export async function syncFullStateToCloud(newState: AppState, prevState?: AppSt
       } else {
         const snap = await getDocs(collection(db, colName));
         for (const d of snap.docs) {
+          if (writeQuotaExhausted) return;
           if (!newIds.has(d.id)) {
             await deleteDoc(doc(db, colName, d.id));
           }
