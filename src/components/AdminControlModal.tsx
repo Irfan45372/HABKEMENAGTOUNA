@@ -549,7 +549,7 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
     };
     onUpdateState((prev) => ({
       ...prev,
-      videos: [item, ...(prev.videos || DEFAULT_APP_STATE.videos || [])],
+      videos: [item, ...(prev.videos ?? [])],
     }));
     setNewVidJudul('');
     setNewVidUrl('');
@@ -559,7 +559,7 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
 
   const handleUpdateVideo = (id: string, partial: Partial<VideoItem>) => {
     onUpdateState((prev) => {
-      const currentVideos = prev.videos || DEFAULT_APP_STATE.videos || [];
+      const currentVideos = prev.videos ?? [];
       return {
         ...prev,
         videos: currentVideos.map((v) => {
@@ -580,7 +580,7 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
 
   const handleDeleteVideo = (id: string) => {
     onUpdateState((prev) => {
-      const currentVideos = prev.videos || DEFAULT_APP_STATE.videos || [];
+      const currentVideos = prev.videos ?? [];
       return {
         ...prev,
         videos: currentVideos.filter((v) => v.id !== id),
@@ -612,7 +612,7 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
     };
     onUpdateState((prev) => ({
       ...prev,
-      satkerBanners: [item, ...(prev.satkerBanners || DEFAULT_APP_STATE.satkerBanners || [])],
+      satkerBanners: [item, ...(prev.satkerBanners ?? [])],
     }));
     setNewBannerJudul('');
     setNewBannerImageUrl('');
@@ -623,7 +623,7 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
 
   const handleUpdateSatkerBanner = (id: string, partial: Partial<SatkerBannerItem>) => {
     onUpdateState((prev) => {
-      const current = prev.satkerBanners || DEFAULT_APP_STATE.satkerBanners || [];
+      const current = prev.satkerBanners ?? [];
       return {
         ...prev,
         satkerBanners: current.map((b) => (b.id === id ? { ...b, ...partial } : b)),
@@ -633,7 +633,7 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
 
   const handleDeleteSatkerBanner = (id: string) => {
     onUpdateState((prev) => {
-      const current = prev.satkerBanners || DEFAULT_APP_STATE.satkerBanners || [];
+      const current = prev.satkerBanners ?? [];
       return {
         ...prev,
         satkerBanners: current.filter((b) => b.id !== id),
@@ -731,8 +731,8 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
     reader.readAsText(file);
   };
 
-  const videosList = appState.videos || DEFAULT_APP_STATE.videos || [];
-  const bannersList = appState.satkerBanners || DEFAULT_APP_STATE.satkerBanners || [];
+  const videosList = appState.videos ?? [];
+  const bannersList = appState.satkerBanners ?? [];
 
   return (
     <div
@@ -1637,7 +1637,7 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                   {/* Schedule Items List with Edit & Delete */}
                   <div className="space-y-2">
                     <h4 className="text-xs font-bold text-slate-200">
-                      Daftar Jadwal Acara ({appState.schedules.length}) — Klik &ldquo;Edit&rdquo; untuk mengubah tanggal/jam/status atau &ldquo;Hapus&rdquo;
+                      Daftar Jadwal Acara ({appState.schedules.length}) — Klik &ldquo;Edit&rdquo; untuk mengubah acara/tanggal/lokasi/PIC/status atau &ldquo;Hapus&rdquo;
                     </h4>
                     {appState.schedules.map((s) => {
                       const isEditing = editingSchId === s.id;
@@ -1651,6 +1651,7 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                               <strong className="text-white">{s.judul}</strong>{' '}
                               <span className="text-amber-300">({s.kategori})</span> · {s.tanggal} ({s.waktu}) ·{' '}
                               <span className="text-emerald-300">{s.lokasiNama}</span> ·{' '}
+                              <span className="text-slate-300">PIC: {s.pic}</span> ·{' '}
                               <span className="underline">{s.status}</span>
                             </div>
                             <div className="flex items-center gap-1.5 shrink-0">
@@ -1659,7 +1660,7 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                                 onClick={() => {
                                   if (isEditing) {
                                     setEditingSchId(null);
-                                    notify(`✓ Perubahan jadwal "${s.judul}" berhasil disimpan!`);
+                                    notify(`✓ Perubahan jadwal "${s.judul}" berhasil disimpan secara real-time!`);
                                   } else {
                                     setEditingSchId(s.id);
                                   }
@@ -1674,13 +1675,15 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                               </button>
                               <button
                                 type="button"
-                                onClick={() =>
+                                onClick={() => {
                                   onUpdateState((prev) => ({
                                     ...prev,
                                     schedules: prev.schedules.filter((x) => x.id !== s.id),
-                                  }))
-                                }
-                                className="p-1.5 rounded bg-rose-950 text-rose-300 cursor-pointer"
+                                  }));
+                                  notify(`Agenda "${s.judul}" berhasil dihapus secara real-time.`);
+                                }}
+                                className="p-1.5 rounded bg-rose-950 text-rose-300 hover:bg-rose-900 cursor-pointer"
+                                title="Hapus Jadwal Acara"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
@@ -1688,7 +1691,7 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                           </div>
 
                           {isEditing && (
-                            <div className="pt-2 border-t border-emerald-800/70 grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+                            <div className="pt-2 border-t border-emerald-800/70 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
                               <input
                                 type="text"
                                 value={s.judul}
@@ -1704,24 +1707,7 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                                 onChange={(e) =>
                                   handleUpdateSchedule(s.id, { kategori: e.target.value })
                                 }
-                                placeholder="Kategori"
-                                className="px-2.5 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
-                              />
-                              <input
-                                type="date"
-                                value={s.tanggal}
-                                onChange={(e) =>
-                                  handleUpdateSchedule(s.id, { tanggal: e.target.value })
-                                }
-                                className="px-2.5 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
-                              />
-                              <input
-                                type="text"
-                                value={s.waktu}
-                                onChange={(e) =>
-                                  handleUpdateSchedule(s.id, { waktu: e.target.value })
-                                }
-                                placeholder="Waktu"
+                                placeholder="Kategori (mis. Bakti Sosial)"
                                 className="px-2.5 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
                               />
                               <select
@@ -1738,6 +1724,69 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                                 <option value="Ditunda/Pindah Lokasi">Ditunda/Pindah Lokasi</option>
                                 <option value="Selesai">Selesai</option>
                               </select>
+                              <input
+                                type="date"
+                                value={s.tanggal}
+                                onChange={(e) =>
+                                  handleUpdateSchedule(s.id, { tanggal: e.target.value })
+                                }
+                                className="px-2.5 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
+                              />
+                              <input
+                                type="text"
+                                value={s.waktu}
+                                onChange={(e) =>
+                                  handleUpdateSchedule(s.id, { waktu: e.target.value })
+                                }
+                                placeholder="Waktu (08:00 - 11:00 WITA)"
+                                className="px-2.5 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
+                              />
+                              <select
+                                value={s.lokasiId}
+                                onChange={(e) => {
+                                  const selectedVenue = appState.venues.find(
+                                    (v) => v.id === e.target.value
+                                  );
+                                  handleUpdateSchedule(s.id, {
+                                    lokasiId: e.target.value,
+                                    lokasiNama: selectedVenue ? selectedVenue.nama : s.lokasiNama,
+                                  });
+                                }}
+                                className="px-2.5 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
+                              >
+                                {appState.venues.map((v) => (
+                                  <option key={v.id} value={v.id}>
+                                    Pin Peta: {v.nama}
+                                  </option>
+                                ))}
+                              </select>
+                              <input
+                                type="text"
+                                value={s.lokasiNama}
+                                onChange={(e) =>
+                                  handleUpdateSchedule(s.id, { lokasiNama: e.target.value })
+                                }
+                                placeholder="Nama Lokasi Tampil"
+                                className="px-2.5 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-emerald-200"
+                              />
+                              <input
+                                type="text"
+                                value={s.pic}
+                                onChange={(e) =>
+                                  handleUpdateSchedule(s.id, { pic: e.target.value })
+                                }
+                                placeholder="Koordinator / PIC"
+                                className="px-2.5 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
+                              />
+                              <input
+                                type="text"
+                                value={s.catatan || ''}
+                                onChange={(e) =>
+                                  handleUpdateSchedule(s.id, { catatan: e.target.value })
+                                }
+                                placeholder="Catatan Tambahan Acara (opsional)"
+                                className="sm:col-span-2 lg:col-span-3 px-2.5 py-1.5 rounded bg-[#03251c] border border-emerald-700 text-xs text-slate-200"
+                              />
                             </div>
                           )}
                         </div>
@@ -1944,7 +1993,35 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                       </form>
 
                       {/* Existing Baksos Edit/Delete */}
-                      <div className="space-y-2 max-h-56 overflow-y-auto pr-1 pt-2 border-t border-emerald-800/70">
+                      <div className="space-y-2 max-h-64 overflow-y-auto pr-1 pt-2 border-t border-emerald-800/70">
+                        {appState.baksosMetrics.length > 0 && (
+                          <div className="flex items-center justify-between gap-2 pb-1">
+                            <span className="text-[11px] text-slate-300 font-semibold">
+                              Daftar Aktif ({appState.baksosMetrics.length} Program):
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onUpdateState((prev) => ({
+                                  ...prev,
+                                  baksosMetrics: [],
+                                }));
+                                notify(
+                                  '✓ Seluruh indikator Bakti Sosial berhasil dikosongkan secara permanen & disinkronkan ke Cloud!'
+                                );
+                              }}
+                              className="px-2.5 py-1 rounded bg-rose-950/90 hover:bg-rose-900 border border-rose-500/50 text-rose-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                              <span>Hapus Semua Baksos</span>
+                            </button>
+                          </div>
+                        )}
+                        {appState.baksosMetrics.length === 0 && (
+                          <div className="text-center text-[11px] text-slate-400 py-3">
+                            Daftar indikator Bakti Sosial saat ini kosong.
+                          </div>
+                        )}
                         {appState.baksosMetrics.map((b) => (
                           <div
                             key={b.id}
@@ -1957,8 +2034,22 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                                 onChange={(e) =>
                                   handleUpdateBaksos(b.id, { namaProgram: e.target.value })
                                 }
+                                placeholder="Nama Program Bakti Sosial"
                                 className="flex-1 px-2 py-1 rounded bg-[#021b15] border border-emerald-700 text-white font-bold text-xs"
                               />
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  notify(
+                                    `✓ Indikator Baksos "${b.namaProgram}" berhasil disimpan secara real-time!`
+                                  )
+                                }
+                                className="px-2.5 py-1 rounded bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-[11px] flex items-center gap-1 cursor-pointer shrink-0"
+                                title="Simpan Perubahan Indikator Baksos"
+                              >
+                                <Check className="w-3 h-3" />
+                                <span>Simpan</span>
+                              </button>
                               <button
                                 type="button"
                                 onClick={() => handleDeleteBaksos(b.id)}
@@ -2006,6 +2097,26 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                                   className="w-full px-2 py-1 rounded bg-[#021b15] border border-emerald-800 text-slate-200 text-xs"
                                 />
                               </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-1.5 pt-1">
+                              <input
+                                type="text"
+                                value={b.lokasi || ''}
+                                onChange={(e) =>
+                                  handleUpdateBaksos(b.id, { lokasi: e.target.value })
+                                }
+                                placeholder="Lokasi Pelaksanaan Baksos"
+                                className="px-2 py-1 rounded bg-[#021b15] border border-emerald-800 text-[11px] text-slate-300"
+                              />
+                              <input
+                                type="text"
+                                value={b.koordinator || ''}
+                                onChange={(e) =>
+                                  handleUpdateBaksos(b.id, { koordinator: e.target.value })
+                                }
+                                placeholder="Koordinator / Seksi"
+                                className="px-2 py-1 rounded bg-[#021b15] border border-emerald-800 text-[11px] text-slate-300"
+                              />
                             </div>
                           </div>
                         ))}

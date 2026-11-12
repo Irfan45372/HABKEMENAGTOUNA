@@ -105,27 +105,33 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
   const [cameraStatus, setCameraStatus] = useState<string | null>(null);
   const videoScannerRef = useRef<HTMLVideoElement | null>(null);
 
+  const emptyCouponTemplate: JalanSehatCoupon = {
+    id: 'cpn-empty-template',
+    nomorKupon: 'HAB81-TOUNA-0000-00',
+    namaPeserta: 'Belum Ada Peserta Terdaftar',
+    satkerAtauUmum: 'Silakan Daftar Kupon Baru',
+    nikAtauNip: '-',
+    noHp: '-',
+    waktuRegistrasi: '-',
+    sudahMenang: false,
+  };
+
   // Currently previewed coupon on the Digital Ticket Canvas
   const [activeCoupon, setActiveCoupon] = useState<JalanSehatCoupon>(
-    () =>
-      coupons[0] || {
-        id: 'cpn-seed-1',
-        nomorKupon: 'HAB81-TOUNA-0001-81',
-        namaPeserta: 'H. Muh. Syahrir, S.Ag., M.H.',
-        satkerAtauUmum: 'Kantor Kemenag Kab. Tojo Una-Una (Induk)',
-        nikAtauNip: '197403112000031002',
-        noHp: '081241008181',
-        waktuRegistrasi: '10 Nov 2026, 08:15 WITA',
-        sudahMenang: false,
-      }
+    () => coupons[0] || emptyCouponTemplate
   );
 
-  // Sync activeCoupon when coupons array updates (e.g., after edit or delete)
+  // Sync activeCoupon when coupons array updates (including when all coupons are deleted)
   useEffect(() => {
+    if (coupons.length === 0) {
+      setActiveCoupon(emptyCouponTemplate);
+      setIsEditingActiveCoupon(false);
+      return;
+    }
     const updated = coupons.find((c) => c.id === activeCoupon.id);
     if (updated) {
       setActiveCoupon(updated);
-    } else if (coupons.length > 0) {
+    } else {
       setActiveCoupon(coupons[0]);
     }
   }, [coupons]);
@@ -1218,35 +1224,37 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (isEditingActiveCoupon) {
-                      setIsEditingActiveCoupon(false);
-                    } else {
-                      handleStartEditCoupon(activeCoupon);
+                {activeCoupon.id !== 'cpn-empty-template' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (isEditingActiveCoupon) {
+                        setIsEditingActiveCoupon(false);
+                      } else {
+                        handleStartEditCoupon(activeCoupon);
+                      }
+                    }}
+                    className="px-3 py-2 rounded-lg bg-[#021b15] hover:bg-emerald-900 border border-amber-400/50 text-amber-300 font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+                    title={
+                      isAdminUnlocked
+                        ? 'Edit Data Peserta Kupon Ini'
+                        : 'Khusus Admin: Buka Kunci PIN untuk mengedit data peserta'
                     }
-                  }}
-                  className="px-3 py-2 rounded-lg bg-[#021b15] hover:bg-emerald-900 border border-amber-400/50 text-amber-300 font-bold text-xs flex items-center gap-1.5 cursor-pointer"
-                  title={
-                    isAdminUnlocked
-                      ? 'Edit Data Peserta Kupon Ini'
-                      : 'Khusus Admin: Buka Kunci PIN untuk mengedit data peserta'
-                  }
-                >
-                  {isAdminUnlocked ? (
-                    <Edit3 className="w-3.5 h-3.5" />
-                  ) : (
-                    <Lock className="w-3.5 h-3.5" />
-                  )}
-                  <span>
-                    {isEditingActiveCoupon
-                      ? 'Batal Edit'
-                      : isAdminUnlocked
-                      ? 'Edit Data Peserta'
-                      : 'Edit Data Peserta (Admin)'}
-                  </span>
-                </button>
+                  >
+                    {isAdminUnlocked ? (
+                      <Edit3 className="w-3.5 h-3.5" />
+                    ) : (
+                      <Lock className="w-3.5 h-3.5" />
+                    )}
+                    <span>
+                      {isEditingActiveCoupon
+                        ? 'Batal Edit'
+                        : isAdminUnlocked
+                        ? 'Edit Data Peserta'
+                        : 'Edit Data Peserta (Admin)'}
+                    </span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => {

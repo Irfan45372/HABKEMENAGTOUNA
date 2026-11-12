@@ -145,12 +145,9 @@ export const PanitiaInfoModal: React.FC<PanitiaInfoModalProps> = ({
     };
   }, [readingLetterState]);
 
-  const announcements =
-    branding.runningTextItems.length > 0
-      ? branding.runningTextItems
-      : [
-          'Selamat Memperingati Hari Amal Bakti ke-81 Kementerian Agama Republik Indonesia — Kantor Kementerian Agama Kabupaten Tojo Una-Una Tahun 2027.',
-        ];
+  const announcements = Array.isArray(branding.runningTextItems)
+    ? branding.runningTextItems
+    : [];
 
   const announcementLetters: (AnnouncementLetter | null)[] = announcements.map(
     (_, idx) => branding.announcementLetters?.[idx] || null
@@ -189,7 +186,10 @@ export const PanitiaInfoModal: React.FC<PanitiaInfoModalProps> = ({
     return 0;
   })();
 
-  const primaryAnnouncementText = announcements[highlightedAnnouncementIndex] || announcements[0];
+  const primaryAnnouncementText =
+    announcements[highlightedAnnouncementIndex] ||
+    announcements[0] ||
+    'Pengumuman Resmi Panitia HAB ke-81 Kemenag Kab. Tojo Una-Una Tahun 2027';
   const primaryRedaksiSlug = getAnnouncementUrlSlug(primaryAnnouncementText, 6);
   const primarySnippetWords = getAnnouncementSnippetWords(primaryAnnouncementText, 6);
 
@@ -1064,7 +1064,17 @@ export const PanitiaInfoModal: React.FC<PanitiaInfoModalProps> = ({
 
           {/* Announcements Cards List */}
           <div className="space-y-3">
-            {announcements.map((item, index) => {
+            {announcements.length === 0 ? (
+              <div className="p-6 rounded-xl bg-[#021b15]/95 border border-dashed border-emerald-800/80 text-center space-y-1.5">
+                <p className="text-xs sm:text-sm font-semibold text-slate-300">
+                  Belum ada pengumuman panitia yang ditampilkan saat ini.
+                </p>
+                <p className="text-[11px] text-slate-400">
+                  Klik tombol <strong className="text-amber-300">Edit / Upload Surat (Admin)</strong> di atas jika Admin ingin menambahkan pengumuman baru.
+                </p>
+              </div>
+            ) : (
+              announcements.map((item, index) => {
               const isEditingThis = showAdminControls && editingIndex === index;
               const attachedLetter = announcementLetters[index];
               const itemSnippetWords = getAnnouncementSnippetWords(item, 6);
@@ -1549,7 +1559,8 @@ export const PanitiaInfoModal: React.FC<PanitiaInfoModalProps> = ({
                   )}
                 </div>
               );
-            })}
+            })
+            )}
           </div>
         </div>
 

@@ -13,6 +13,7 @@ import {
   collection,
   setDoc,
   deleteDoc,
+  getDoc,
   getDocFromServer,
   onSnapshot,
   writeBatch,
@@ -22,6 +23,8 @@ import {
 import firebaseConfig from '../firebase-applet-config.json';
 import {
   AppState,
+  BrandingConfig,
+  Competition,
   HarmonyMessage,
   JalanSehatCoupon,
   JournalArticle,
@@ -181,24 +184,200 @@ export async function signOutFirebase(): Promise<void> {
 export { onAuthStateChanged, onSnapshot, collection, doc, getDocFromServer };
 export type { User };
 
-export async function savePortalConfigToCloud(state: AppState): Promise<void> {
-  if (writeQuotaExhausted) return;
+const CHUNK_PREFIX = '__cloud_chunks__:';
+const MAX_INLINE_STRING_LEN = 35_000;
+const CHUNK_SIZE_CHARS = 600_000;
+const attachmentMemoryCache = new Map<string, string>();
+
+export const PENDING_CONFIG_SYNC_KEY = 'HAB81_PENDING_PORTAL_CONFIG_SYNC_TS';
+
+export function markPendingPortalConfigSync(isoTimestamp: string | null): void {
+  try {
+    if (isoTimestamp) {
+      window.localStorage.setItem(PENDING_CONFIG_SYNC_KEY, isoTimestamp);
+    } else {
+      window.localStorage.removeItem(PENDING_CONFIG_SYNC_KEY);
+    }
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+export function getPendingPortalConfigSync(): string | null {
+  try {
+    return window.localStorage.getItem(PENDING_CONFIG_SYNC_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function computeStableHash(input: string): string {
+  let h1 = 0xdeadbeef ^ input.length;
+  let h2 = 0x41c6ce57 ^ input.length;
+  for (let i = 0; i < input.length; i++) {
+    const ch = input.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (h2 >>> 0).toString(36) + (h1 >>> 0).toString(36);
+}
+
+async function offloadLargeString(pathHint: string, rawStr: string): Promise<string> {
+  if (!rawStr || rawStr.startsWith(CHUNK_PREFIX) || rawStr.length <= MAX_INLINE_STRING_LEN) {
+    return rawStr;
+  }
+  const safeHint = pathHint.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 32);
+  const fingerprint = computeStableHash(
+    `${rawStr.length}:${rawStr.slice(0, 128)}:${rawStr.slice(-128)}`
+  );
+  const docPrefix = `att_${safeHint}_${fingerprint}`;
+  const totalChunks = Math.ceil(rawStr.length / CHUNK_SIZE_CHARS);
+  const pointer = `${CHUNK_PREFIX}${docPrefix}:${totalChunks}:${rawStr.length}`;
+
+  if (attachmentMemoryCache.get(pointer) === rawStr) {
+    return pointer;
+  }
+
+  try {
+    for (let i = 0; i < totalChunks; i++) {
+      const slice = rawStr.slice(i * CHUNK_SIZE_CHARS, (i + 1) * CHUNK_SIZE_CHARS);
+      const chunkDocId = `${docPrefix}_c${i}`;
+      await setDoc(doc(db, 'portalConfig', chunkDocId), {
+        branding: {},
+        competitions: [],
+        schedules: [],
+        chunkData: slice,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+    attachmentMemoryCache.set(pointer, rawStr);
+    return pointer;
+  } catch (err) {
+    console.warn('[Cloud Sync] Offload attachment failed for', pathHint, err);
+    // Never leave a >1MB inline string inside portalConfig/main or the entire config save will fail
+    if (rawStr.length > 750_000) {
+      return '';
+    }
+    return rawStr;
+  }
+}
+
+async function offloadLargeFieldsRecursively(value: unknown, pathHint: string): Promise<unknown> {
+  if (typeof value === 'string') {
+    if (value.length > MAX_INLINE_STRING_LEN) {
+      return offloadLargeString(pathHint, value);
+    }
+    return value;
+  }
+  if (Array.isArray(value)) {
+    const out: unknown[] = [];
+    for (let i = 0; i < value.length; i++) {
+      out.push(await offloadLargeFieldsRecursively(value[i], `${pathHint}_${i}`));
+    }
+    return out;
+  }
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    const idSuffix = typeof record.id === 'string' ? `_${record.id}` : '';
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(record)) {
+      out[k] = await offloadLargeFieldsRecursively(v, `${pathHint}${idSuffix}_${k}`);
+    }
+    return out;
+  }
+  return value;
+}
+
+async function resolveCloudChunkPointer(value: string): Promise<string> {
+  if (!value || !value.startsWith(CHUNK_PREFIX)) return value;
+  const cached = attachmentMemoryCache.get(value);
+  if (cached) return cached;
+
+  try {
+    const raw = value.slice(CHUNK_PREFIX.length);
+    const parts = raw.split(':');
+    const docPrefix = parts[0];
+    const totalChunks = parseInt(parts[1] || '1', 10);
+    if (!docPrefix || Number.isNaN(totalChunks) || totalChunks < 1) return value;
+
+    const chunks: string[] = [];
+    for (let i = 0; i < totalChunks; i++) {
+      const chunkDocId = `${docPrefix}_c${i}`;
+      const snap = await getDoc(doc(db, 'portalConfig', chunkDocId));
+      if (!snap.exists()) return value;
+      const chunkData = snap.data()?.chunkData;
+      if (typeof chunkData !== 'string') return value;
+      chunks.push(chunkData);
+    }
+    const full = chunks.join('');
+    attachmentMemoryCache.set(value, full);
+    return full;
+  } catch {
+    return value;
+  }
+}
+
+async function hydrateChunkPointersRecursively(value: unknown): Promise<unknown> {
+  if (typeof value === 'string') {
+    if (value.startsWith(CHUNK_PREFIX)) {
+      return resolveCloudChunkPointer(value);
+    }
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return Promise.all(value.map((item) => hydrateChunkPointersRecursively(item)));
+  }
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    const entries = await Promise.all(
+      Object.entries(record).map(async ([k, v]) => [k, await hydrateChunkPointersRecursively(v)])
+    );
+    return Object.fromEntries(entries);
+  }
+  return value;
+}
+
+export async function hydratePortalConfigData(
+  rawData: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+  const cloned = stripUndefined(rawData);
+  return (await hydrateChunkPointersRecursively(cloned)) as Record<string, unknown>;
+}
+
+export async function savePortalConfigToCloud(state: AppState): Promise<boolean> {
+  const updatedAt = state.updatedAt || new Date().toISOString();
+  markPendingPortalConfigSync(updatedAt);
+  if (writeQuotaExhausted) return false;
   const path = 'portalConfig/main';
   try {
-    const payload = stripUndefined({
+    const rawPayload = stripUndefined({
       branding: state.branding,
-      venues: state.venues,
-      satkerList: state.satkerList,
-      competitions: state.competitions,
-      matches: state.matches,
-      medalStandings: state.medalStandings,
-      schedules: state.schedules,
-      baksosMetrics: state.baksosMetrics,
-      updatedAt: new Date().toISOString(),
+      venues: state.venues || [],
+      satkerList: state.satkerList || [],
+      competitions: state.competitions || [],
+      matches: state.matches || [],
+      medalStandings: state.medalStandings || [],
+      schedules: state.schedules || [],
+      baksosMetrics: state.baksosMetrics || [],
+      collectionsSeededV2: true,
+      updatedAt,
     });
-    await setDoc(doc(db, 'portalConfig', 'main'), payload, { merge: true });
+
+    const compactPayload = (await offloadLargeFieldsRecursively(
+      rawPayload,
+      'cfg'
+    )) as Record<string, unknown>;
+
+    await setDoc(doc(db, 'portalConfig', 'main'), compactPayload);
+    if (getPendingPortalConfigSync() === updatedAt) {
+      markPendingPortalConfigSync(null);
+    }
+    return true;
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
+    return false;
   }
 }
 

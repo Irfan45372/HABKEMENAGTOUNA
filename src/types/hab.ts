@@ -270,6 +270,7 @@ export interface AppState {
   videos?: VideoItem[];
   satkerBanners?: SatkerBannerItem[];
   journals?: JournalArticle[];
+  updatedAt?: string;
 }
 
 

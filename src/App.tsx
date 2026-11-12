@@ -4,7 +4,23 @@
  */
 
 import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
-import { AppState, BrandingConfig, Competition, HarmonyMessage, JalanSehatCoupon, JournalArticle, NavLabelsConfig, ParticipantRegistration, SatkerBannerItem, VenueLocation, VideoItem } from './types/hab';
+import {
+  AppState,
+  BaksosMetric,
+  BrandingConfig,
+  Competition,
+  HarmonyMessage,
+  JalanSehatCoupon,
+  JournalArticle,
+  MatchScore,
+  MedalStanding,
+  NavLabelsConfig,
+  ParticipantRegistration,
+  SatkerBannerItem,
+  ScheduleEvent,
+  VenueLocation,
+  VideoItem,
+} from './types/hab';
 import { DEFAULT_APP_STATE, STORAGE_KEY } from './data/defaultState';
 import { HeroScene3D } from './components/HeroScene3D';
 import { VenueMap3D } from './components/VenueMap3D';
@@ -27,10 +43,8 @@ import { ViewportLazySection } from './components/ViewportLazySection';
 import { Hab81LogoBadge, KemenagLogoImg } from './components/DynamicLogoBadge';
 import { BookOpen, Check, Cloud, Edit3, Megaphone, Settings, Share2 } from 'lucide-react';
 
-import { validateImportedState } from './utils/habLogic';
 import { getAnnouncementSnippetWords, getAnnouncementUrlSlug } from './utils/letterUtils';
 import {
-  ADMIN_EMAIL,
   auth,
   collection,
   db,
@@ -41,7 +55,9 @@ import {
   deleteVideoFromCloud,
   doc,
   getDocFromServer,
+  getPendingPortalConfigSync,
   handleFirestoreError,
+  hydratePortalConfigData,
   onAuthStateChanged,
   onSnapshot,
   OperationType,
@@ -57,27 +73,80 @@ import {
   User,
 } from './firebase';
 
-const GITHUB_RAW_STATE_URL =
-  'https://raw.githubusercontent.com/Irfan45372/HABKEMENAGTOUNA/main/hab81-kemenag-touna-2027-state.json';
+const CORE_META_STORAGE_KEY = 'HABKEMENAGTOUNA_81_2027_CORE_META_V3';
+
+function stripLargeStringsForLocalCache(value: unknown): unknown {
+  if (typeof value === 'string') {
+    if (value.startsWith('data:') && value.length > 25_000) {
+      return '';
+    }
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => stripLargeStringsForLocalCache(item));
+  }
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      out[k] = stripLargeStringsForLocalCache(v);
+    }
+    return out;
+  }
+  return value;
+}
 
 function persistStateLocally(state: AppState): void {
   try {
+    window.localStorage.removeItem('HABKEMENAGTOUNA_81_2027_STATE_V1');
+    window.localStorage.removeItem('HABKEMENAGTOUNA_81_2027_STATE');
+  } catch {
+    // Ignore
+  }
+
+  // 1. Always save lightweight core dynamic lists (~15 KB) so QuotaExceededError never resurrects deleted items
+  try {
+    const coreMeta = {
+      updatedAt: state.updatedAt,
+      schedules: state.schedules,
+      baksosMetrics: state.baksosMetrics,
+      matches: state.matches,
+      medalStandings: state.medalStandings,
+      satkerList: state.satkerList,
+      venues: state.venues,
+    };
+    window.localStorage.setItem(CORE_META_STORAGE_KEY, JSON.stringify(coreMeta));
+  } catch {
+    // Ignore
+  }
+
+  // 2. Save full state, or fallback to stripped-DataURL state if > 5 MB localStorage quota
+  try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch {
-    // Ignore storage quota errors
+    try {
+      const compactState = stripLargeStringsForLocalCache(state);
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(compactState));
+    } catch {
+      // Ignore storage quota errors
+    }
   }
 }
 
 export default function App() {
   const [appState, setAppState] = useState<AppState>(() => {
     try {
-      const saved =
-        window.localStorage.getItem(STORAGE_KEY) ||
-        window.localStorage.getItem('HABKEMENAGTOUNA_81_2027_STATE_V1') ||
-        window.localStorage.getItem('HABKEMENAGTOUNA_81_2027_STATE');
+      const saved = window.localStorage.getItem(STORAGE_KEY);
+      const savedMetaRaw = window.localStorage.getItem(CORE_META_STORAGE_KEY);
+      const savedMeta = savedMetaRaw ? (JSON.parse(savedMetaRaw) as Partial<AppState>) : null;
+
       if (saved) {
         const parsed = JSON.parse(saved) as AppState;
         if (parsed && parsed.branding && Array.isArray(parsed.competitions)) {
+          const preferMeta =
+            savedMeta &&
+            (!parsed.updatedAt ||
+              (savedMeta.updatedAt && savedMeta.updatedAt >= parsed.updatedAt));
+
           const mergedState: AppState = {
             ...DEFAULT_APP_STATE,
             ...parsed,
@@ -94,33 +163,59 @@ export default function App() {
               },
             },
             venues:
-              Array.isArray(parsed.venues) && parsed.venues.length > 0
+              preferMeta && Array.isArray(savedMeta?.venues)
+                ? savedMeta.venues
+                : Array.isArray(parsed.venues)
                 ? parsed.venues
                 : DEFAULT_APP_STATE.venues,
-            registrations:
-              Array.isArray(parsed.registrations) && parsed.registrations.length > 0
-                ? parsed.registrations
-                : DEFAULT_APP_STATE.registrations,
-            coupons:
-              Array.isArray(parsed.coupons) && parsed.coupons.length > 0
-                ? parsed.coupons
-                : DEFAULT_APP_STATE.coupons,
-            messages:
-              Array.isArray(parsed.messages) && parsed.messages.length > 0
-                ? parsed.messages
-                : DEFAULT_APP_STATE.messages,
-            videos:
-              Array.isArray(parsed.videos) && parsed.videos.length > 0
-                ? parsed.videos
-                : DEFAULT_APP_STATE.videos,
-            satkerBanners:
-              Array.isArray(parsed.satkerBanners) && parsed.satkerBanners.length > 0
-                ? parsed.satkerBanners
-                : DEFAULT_APP_STATE.satkerBanners,
-            journals:
-              Array.isArray(parsed.journals) && parsed.journals.length > 0
-                ? parsed.journals
-                : DEFAULT_APP_STATE.journals,
+            satkerList:
+              preferMeta && Array.isArray(savedMeta?.satkerList)
+                ? savedMeta.satkerList
+                : Array.isArray(parsed.satkerList)
+                ? parsed.satkerList
+                : DEFAULT_APP_STATE.satkerList,
+            competitions: Array.isArray(parsed.competitions)
+              ? parsed.competitions
+              : DEFAULT_APP_STATE.competitions,
+            matches:
+              preferMeta && Array.isArray(savedMeta?.matches)
+                ? savedMeta.matches
+                : Array.isArray(parsed.matches)
+                ? parsed.matches
+                : DEFAULT_APP_STATE.matches,
+            medalStandings:
+              preferMeta && Array.isArray(savedMeta?.medalStandings)
+                ? savedMeta.medalStandings
+                : Array.isArray(parsed.medalStandings)
+                ? parsed.medalStandings
+                : DEFAULT_APP_STATE.medalStandings,
+            schedules:
+              preferMeta && Array.isArray(savedMeta?.schedules)
+                ? savedMeta.schedules
+                : Array.isArray(parsed.schedules)
+                ? parsed.schedules
+                : DEFAULT_APP_STATE.schedules,
+            baksosMetrics:
+              preferMeta && Array.isArray(savedMeta?.baksosMetrics)
+                ? savedMeta.baksosMetrics
+                : Array.isArray(parsed.baksosMetrics)
+                ? parsed.baksosMetrics
+                : DEFAULT_APP_STATE.baksosMetrics,
+            registrations: Array.isArray(parsed.registrations)
+              ? parsed.registrations
+              : DEFAULT_APP_STATE.registrations,
+            coupons: Array.isArray(parsed.coupons) ? parsed.coupons : DEFAULT_APP_STATE.coupons,
+            messages: Array.isArray(parsed.messages)
+              ? parsed.messages
+              : DEFAULT_APP_STATE.messages,
+            videos: Array.isArray(parsed.videos) ? parsed.videos : DEFAULT_APP_STATE.videos,
+            satkerBanners: Array.isArray(parsed.satkerBanners)
+              ? parsed.satkerBanners
+              : DEFAULT_APP_STATE.satkerBanners,
+            journals: Array.isArray(parsed.journals)
+              ? parsed.journals
+              : DEFAULT_APP_STATE.journals,
+            updatedAt: preferMeta ? savedMeta?.updatedAt || parsed.updatedAt : parsed.updatedAt,
           };
           return mergedState;
         }
@@ -351,26 +446,34 @@ export default function App() {
 
         if (!mainSnap.exists()) {
           // First time initialization: seed Firestore with current state
-          await seedInitialStateToCloud(initialStateRef.current);
+          const stamped: AppState = {
+            ...initialStateRef.current,
+            updatedAt: initialStateRef.current.updatedAt || new Date().toISOString(),
+          };
+          initialStateRef.current = stamped;
+          persistStateLocally(stamped);
+          await seedInitialStateToCloud(stamped);
+        } else {
+          const cloudData = mainSnap.data();
+          const pendingSyncTs = getPendingPortalConfigSync();
+          const cloudUpdatedAt =
+            typeof cloudData?.updatedAt === 'string' ? cloudData.updatedAt : undefined;
+
+          if (pendingSyncTs && (!cloudUpdatedAt || pendingSyncTs > cloudUpdatedAt)) {
+            // Only push local state if THIS device had an interrupted/unsynced mutation
+            const syncedLocal: AppState = {
+              ...initialStateRef.current,
+              updatedAt: pendingSyncTs,
+            };
+            initialStateRef.current = syncedLocal;
+            persistStateLocally(syncedLocal);
+            await savePortalConfigToCloud(syncedLocal);
+          }
         }
         setFirebaseConnected(true);
       } catch (error) {
         if (error instanceof Error && error.message.includes('the client is offline')) {
           console.warn('Please check your Firebase configuration. Client is offline.');
-        }
-        // Fallback: check GitHub raw state if Firestore is not reachable yet
-        const hasLocal = window.localStorage.getItem(STORAGE_KEY);
-        if (!hasLocal) {
-          fetch(`${GITHUB_RAW_STATE_URL}?t=${Date.now()}`, { cache: 'no-store' })
-            .then((res) => (res.ok ? res.json() : null))
-            .then((data) => {
-              if (cancelled || !data) return;
-              const validated = validateImportedState(data);
-              if (validated.valid && validated.state) {
-                setAppState(validated.state);
-              }
-            })
-            .catch(() => {});
         }
       }
 
@@ -382,48 +485,56 @@ export default function App() {
         (snap) => {
           if (!snap.exists()) return;
           setFirebaseConnected(true);
-          const data = snap.data();
-          setAppState((prev) => ({
-            ...prev,
-            branding: data.branding
-              ? {
-                  ...prev.branding,
-                  ...data.branding,
-                  navLabels: {
-                    ...(prev.branding.navLabels || DEFAULT_APP_STATE.branding.navLabels!),
-                    ...(data.branding.navLabels || {}),
-                  },
-                  welcomeVoice: {
-                    ...prev.branding.welcomeVoice!,
-                    ...(data.branding.welcomeVoice || {}),
-                  },
-                }
-              : prev.branding,
-            venues:
-              Array.isArray(data.venues) && data.venues.length > 0 ? data.venues : prev.venues,
-            satkerList:
-              Array.isArray(data.satkerList) && data.satkerList.length > 0
-                ? data.satkerList
-                : prev.satkerList,
-            competitions:
-              Array.isArray(data.competitions) && data.competitions.length > 0
-                ? data.competitions
-                : prev.competitions,
-            matches:
-              Array.isArray(data.matches) && data.matches.length > 0 ? data.matches : prev.matches,
-            medalStandings:
-              Array.isArray(data.medalStandings) && data.medalStandings.length > 0
-                ? data.medalStandings
-                : prev.medalStandings,
-            schedules:
-              Array.isArray(data.schedules) && data.schedules.length > 0
-                ? data.schedules
-                : prev.schedules,
-            baksosMetrics:
-              Array.isArray(data.baksosMetrics) && data.baksosMetrics.length > 0
-                ? data.baksosMetrics
-                : prev.baksosMetrics,
-          }));
+          void hydratePortalConfigData(snap.data()).then((data) => {
+            if (cancelled) return;
+            const incomingBranding = data.branding as Partial<BrandingConfig> | undefined;
+            const incomingUpdatedAt =
+              typeof data.updatedAt === 'string' ? data.updatedAt : undefined;
+            const pendingSyncTs = getPendingPortalConfigSync();
+            setAppState((prev) => {
+              // Only skip an older snapshot if THIS browser tab currently has an unsynced pending write
+              if (pendingSyncTs && incomingUpdatedAt && pendingSyncTs > incomingUpdatedAt) {
+                return prev;
+              }
+              return {
+                ...prev,
+                branding: incomingBranding
+                  ? {
+                      ...prev.branding,
+                      ...incomingBranding,
+                      runningTextItems: Array.isArray(incomingBranding.runningTextItems)
+                        ? incomingBranding.runningTextItems
+                        : [],
+                      announcementLetters: Array.isArray(incomingBranding.announcementLetters)
+                        ? incomingBranding.announcementLetters
+                        : [],
+                      navLabels: {
+                        ...(prev.branding.navLabels || DEFAULT_APP_STATE.branding.navLabels!),
+                        ...(incomingBranding.navLabels || {}),
+                      },
+                      welcomeVoice: {
+                        ...prev.branding.welcomeVoice!,
+                        ...(incomingBranding.welcomeVoice || {}),
+                      },
+                    }
+                  : prev.branding,
+                venues: Array.isArray(data.venues) ? (data.venues as VenueLocation[]) : [],
+                satkerList: Array.isArray(data.satkerList) ? (data.satkerList as string[]) : [],
+                competitions: Array.isArray(data.competitions)
+                  ? (data.competitions as Competition[])
+                  : [],
+                matches: Array.isArray(data.matches) ? (data.matches as MatchScore[]) : [],
+                medalStandings: Array.isArray(data.medalStandings)
+                  ? (data.medalStandings as MedalStanding[])
+                  : [],
+                schedules: Array.isArray(data.schedules) ? (data.schedules as ScheduleEvent[]) : [],
+                baksosMetrics: Array.isArray(data.baksosMetrics)
+                  ? (data.baksosMetrics as BaksosMetric[])
+                  : [],
+                updatedAt: incomingUpdatedAt || prev.updatedAt,
+              };
+            });
+          });
         },
         (err) => handleFirestoreError(err, OperationType.GET, 'portalConfig/main')
       );
@@ -432,7 +543,6 @@ export default function App() {
       unsubRegs = onSnapshot(
         collection(db, 'registrations'),
         (snap) => {
-          if (snap.empty) return;
           const items = snap.docs.map((d) => d.data() as ParticipantRegistration);
           items.sort((a, b) => (b.id > a.id ? 1 : -1));
           setAppState((prev) => ({ ...prev, registrations: items }));
@@ -444,7 +554,6 @@ export default function App() {
       unsubCoupons = onSnapshot(
         collection(db, 'coupons'),
         (snap) => {
-          if (snap.empty) return;
           const items = snap.docs.map((d) => d.data() as JalanSehatCoupon);
           items.sort((a, b) => (b.nomorKupon > a.nomorKupon ? 1 : -1));
           setAppState((prev) => ({ ...prev, coupons: items }));
@@ -456,7 +565,6 @@ export default function App() {
       unsubMessages = onSnapshot(
         collection(db, 'messages'),
         (snap) => {
-          if (snap.empty) return;
           const items = snap.docs.map((d) => d.data() as HarmonyMessage);
           items.sort((a, b) => (b.id > a.id ? 1 : -1));
           setAppState((prev) => ({ ...prev, messages: items }));
@@ -468,7 +576,6 @@ export default function App() {
       unsubVideos = onSnapshot(
         collection(db, 'videos'),
         (snap) => {
-          if (snap.empty) return;
           const items = snap.docs.map((d) => d.data() as VideoItem);
           items.sort((a, b) => (b.id > a.id ? 1 : -1));
           setAppState((prev) => ({ ...prev, videos: items }));
@@ -480,7 +587,6 @@ export default function App() {
       unsubBanners = onSnapshot(
         collection(db, 'satkerBanners'),
         (snap) => {
-          if (snap.empty) return;
           const items = snap.docs.map((d) => d.data() as SatkerBannerItem);
           items.sort((a, b) => (b.id > a.id ? 1 : -1));
           setAppState((prev) => ({ ...prev, satkerBanners: items }));
@@ -492,7 +598,6 @@ export default function App() {
       unsubJournals = onSnapshot(
         collection(db, 'journals'),
         (snap) => {
-          if (snap.empty) return;
           const items = snap.docs.map((d) => d.data() as JournalArticle);
           items.sort((a, b) => (b.id > a.id ? 1 : -1));
           setAppState((prev) => ({
@@ -518,13 +623,9 @@ export default function App() {
     };
   }, []);
 
-  // Automatic Persistence to localStorage
+  // Automatic Persistence to localStorage (Quota-safe)
   useEffect(() => {
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
-    } catch {
-      // Ignore storage quota errors
-    }
+    persistStateLocally(appState);
   }, [appState]);
 
   // Keyboard shortcut Ctrl + Shift + A to open Admin Control Panel
@@ -541,7 +642,7 @@ export default function App() {
 
   const openDedicatedJournalPage = (articleId?: string | null) => {
     setMenuTapTrigger((prev) => prev + 1);
-    const allJournals = appState.journals || DEFAULT_APP_STATE.journals || [];
+    const allJournals = appState.journals ?? [];
     const targetId =
       articleId !== undefined ? articleId : selectedJournalId || allJournals[0]?.id || null;
     setSelectedJournalId(targetId);
@@ -618,10 +719,11 @@ export default function App() {
         newSatkerName && !prev.satkerList.includes(newSatkerName)
           ? [newSatkerName, ...prev.satkerList]
           : prev.satkerList;
-      const next = {
+      const next: AppState = {
         ...prev,
         satkerList: updatedSatkers,
         registrations: [reg, ...prev.registrations],
+        updatedAt: new Date().toISOString(),
       };
       persistStateLocally(next);
       void saveRegistrationToCloud(reg);
@@ -634,9 +736,10 @@ export default function App() {
 
   const handleUpdateCompetition = (id: string, partial: Partial<Competition>) => {
     setAppState((prev) => {
-      const next = {
+      const next: AppState = {
         ...prev,
         competitions: prev.competitions.map((c) => (c.id === id ? { ...c, ...partial } : c)),
+        updatedAt: new Date().toISOString(),
       };
       persistStateLocally(next);
       void savePortalConfigToCloud(next);
@@ -646,9 +749,10 @@ export default function App() {
 
   const handleAddCoupon = (coupon: JalanSehatCoupon) => {
     setAppState((prev) => {
-      const next = {
+      const next: AppState = {
         ...prev,
         coupons: [coupon, ...prev.coupons],
+        updatedAt: new Date().toISOString(),
       };
       persistStateLocally(next);
       void saveCouponToCloud(coupon);
@@ -666,9 +770,10 @@ export default function App() {
         }
         return c;
       });
-      const next = {
+      const next: AppState = {
         ...prev,
         coupons: nextCoupons,
+        updatedAt: new Date().toISOString(),
       };
       persistStateLocally(next);
       if (updatedItem) {
@@ -711,9 +816,10 @@ export default function App() {
         };
         nextCoupons.unshift(updatedItem);
       }
-      const next = {
+      const next: AppState = {
         ...prev,
         coupons: nextCoupons,
+        updatedAt: new Date().toISOString(),
       };
       persistStateLocally(next);
       if (updatedItem) {
@@ -725,9 +831,10 @@ export default function App() {
 
   const handleDeleteCoupon = (couponId: string) => {
     setAppState((prev) => {
-      const next = {
+      const next: AppState = {
         ...prev,
         coupons: prev.coupons.filter((c) => c.id !== couponId),
+        updatedAt: new Date().toISOString(),
       };
       persistStateLocally(next);
       return next;
@@ -737,9 +844,10 @@ export default function App() {
 
   const handleAddHarmonyMessage = (msg: HarmonyMessage) => {
     setAppState((prev) => {
-      const next = {
+      const next: AppState = {
         ...prev,
         messages: [msg, ...prev.messages],
+        updatedAt: new Date().toISOString(),
       };
       persistStateLocally(next);
       void saveHarmonyMessageToCloud(msg);
@@ -757,9 +865,10 @@ export default function App() {
         }
         return m;
       });
-      const next = {
+      const next: AppState = {
         ...prev,
         messages: nextMessages,
+        updatedAt: new Date().toISOString(),
       };
       persistStateLocally(next);
       if (updatedItem) {
@@ -771,9 +880,10 @@ export default function App() {
 
   const handleDeleteHarmonyMessage = (id: string) => {
     setAppState((prev) => {
-      const next = {
+      const next: AppState = {
         ...prev,
         messages: prev.messages.filter((m) => m.id !== id),
+        updatedAt: new Date().toISOString(),
       };
       persistStateLocally(next);
       return next;
@@ -783,9 +893,10 @@ export default function App() {
 
   const handleAddVideo = (video: VideoItem) => {
     setAppState((prev) => {
-      const next = {
+      const next: AppState = {
         ...prev,
-        videos: [video, ...(prev.videos || DEFAULT_APP_STATE.videos || [])],
+        videos: [video, ...(prev.videos ?? [])],
+        updatedAt: new Date().toISOString(),
       };
       persistStateLocally(next);
       void saveVideoToCloud(video);
@@ -795,7 +906,7 @@ export default function App() {
 
   const handleUpdateVideo = (id: string, partial: Partial<VideoItem>) => {
     setAppState((prev) => {
-      const currentVideos = prev.videos || DEFAULT_APP_STATE.videos || [];
+      const currentVideos = prev.videos ?? [];
       let updatedItem: VideoItem | undefined;
       const nextVideos = currentVideos.map((v) => {
         if (v.id === id) {
@@ -804,9 +915,10 @@ export default function App() {
         }
         return v;
       });
-      const next = {
+      const next: AppState = {
         ...prev,
         videos: nextVideos,
+        updatedAt: new Date().toISOString(),
       };
       persistStateLocally(next);
       if (updatedItem) {
@@ -818,10 +930,11 @@ export default function App() {
 
   const handleDeleteVideo = (id: string) => {
     setAppState((prev) => {
-      const currentVideos = prev.videos || DEFAULT_APP_STATE.videos || [];
-      const next = {
+      const currentVideos = prev.videos ?? [];
+      const next: AppState = {
         ...prev,
         videos: currentVideos.filter((v) => v.id !== id),
+        updatedAt: new Date().toISOString(),
       };
       persistStateLocally(next);
       return next;
@@ -835,11 +948,12 @@ export default function App() {
         newSatkerName && !prev.satkerList.includes(newSatkerName)
           ? [newSatkerName, ...prev.satkerList]
           : prev.satkerList;
-      const currentBanners = prev.satkerBanners || DEFAULT_APP_STATE.satkerBanners || [];
-      const next = {
+      const currentBanners = prev.satkerBanners ?? [];
+      const next: AppState = {
         ...prev,
         satkerList: updatedSatkers,
         satkerBanners: [banner, ...currentBanners],
+        updatedAt: new Date().toISOString(),
       };
       persistStateLocally(next);
       void saveSatkerBannerToCloud(banner);
@@ -852,7 +966,7 @@ export default function App() {
 
   const handleUpdateSatkerBanner = (id: string, partial: Partial<SatkerBannerItem>) => {
     setAppState((prev) => {
-      const currentBanners = prev.satkerBanners || DEFAULT_APP_STATE.satkerBanners || [];
+      const currentBanners = prev.satkerBanners ?? [];
       let updatedItem: SatkerBannerItem | undefined;
       const nextBanners = currentBanners.map((b) => {
         if (b.id === id) {
@@ -861,9 +975,10 @@ export default function App() {
         }
         return b;
       });
-      const next = {
+      const next: AppState = {
         ...prev,
         satkerBanners: nextBanners,
+        updatedAt: new Date().toISOString(),
       };
       persistStateLocally(next);
       if (updatedItem) {
@@ -875,10 +990,11 @@ export default function App() {
 
   const handleDeleteSatkerBanner = (id: string) => {
     setAppState((prev) => {
-      const currentBanners = prev.satkerBanners || DEFAULT_APP_STATE.satkerBanners || [];
-      const next = {
+      const currentBanners = prev.satkerBanners ?? [];
+      const next: AppState = {
         ...prev,
         satkerBanners: currentBanners.filter((b) => b.id !== id),
+        updatedAt: new Date().toISOString(),
       };
       persistStateLocally(next);
       return next;
@@ -888,10 +1004,11 @@ export default function App() {
 
   const handleAddJournal = (article: JournalArticle) => {
     setAppState((prev) => {
-      const currentJournals = prev.journals || DEFAULT_APP_STATE.journals || [];
-      const next = {
+      const currentJournals = prev.journals ?? [];
+      const next: AppState = {
         ...prev,
         journals: [article, ...currentJournals],
+        updatedAt: new Date().toISOString(),
       };
       persistStateLocally(next);
       return next;
@@ -901,7 +1018,7 @@ export default function App() {
 
   const handleUpdateJournal = (id: string, partial: Partial<JournalArticle>) => {
     setAppState((prev) => {
-      const currentJournals = prev.journals || DEFAULT_APP_STATE.journals || [];
+      const currentJournals = prev.journals ?? [];
       let updatedItem: JournalArticle | undefined;
       const nextJournals = currentJournals.map((j) => {
         if (j.id === id) {
@@ -910,9 +1027,10 @@ export default function App() {
         }
         return j;
       });
-      const next = {
+      const next: AppState = {
         ...prev,
         journals: nextJournals,
+        updatedAt: new Date().toISOString(),
       };
       persistStateLocally(next);
       if (updatedItem) {
@@ -924,10 +1042,11 @@ export default function App() {
 
   const handleDeleteJournal = (id: string) => {
     setAppState((prev) => {
-      const currentJournals = prev.journals || DEFAULT_APP_STATE.journals || [];
-      const next = {
+      const currentJournals = prev.journals ?? [];
+      const next: AppState = {
         ...prev,
         journals: currentJournals.filter((j) => j.id !== id),
+        updatedAt: new Date().toISOString(),
       };
       persistStateLocally(next);
       return next;
@@ -947,9 +1066,10 @@ export default function App() {
 
   const handleAddVenue = (venue: VenueLocation) => {
     setAppState((prev) => {
-      const next = {
+      const next: AppState = {
         ...prev,
         venues: [...prev.venues, venue],
+        updatedAt: new Date().toISOString(),
       };
       persistStateLocally(next);
       void savePortalConfigToCloud(next);
@@ -959,9 +1079,10 @@ export default function App() {
 
   const handleUpdateVenue = (id: string, partial: Partial<VenueLocation>) => {
     setAppState((prev) => {
-      const next = {
+      const next: AppState = {
         ...prev,
         venues: prev.venues.map((v) => (v.id === id ? { ...v, ...partial } : v)),
+        updatedAt: new Date().toISOString(),
       };
       persistStateLocally(next);
       void savePortalConfigToCloud(next);
@@ -971,9 +1092,49 @@ export default function App() {
 
   const handleDeleteVenue = (id: string) => {
     setAppState((prev) => {
-      const next = {
+      const next: AppState = {
         ...prev,
         venues: prev.venues.filter((v) => v.id !== id),
+        updatedAt: new Date().toISOString(),
+      };
+      persistStateLocally(next);
+      void savePortalConfigToCloud(next);
+      return next;
+    });
+  };
+
+  const handleDeleteSchedule = (id: string) => {
+    setAppState((prev) => {
+      const next: AppState = {
+        ...prev,
+        schedules: prev.schedules.filter((s) => s.id !== id),
+        updatedAt: new Date().toISOString(),
+      };
+      persistStateLocally(next);
+      void savePortalConfigToCloud(next);
+      return next;
+    });
+  };
+
+  const handleDeleteBaksos = (id: string) => {
+    setAppState((prev) => {
+      const next: AppState = {
+        ...prev,
+        baksosMetrics: prev.baksosMetrics.filter((b) => b.id !== id),
+        updatedAt: new Date().toISOString(),
+      };
+      persistStateLocally(next);
+      void savePortalConfigToCloud(next);
+      return next;
+    });
+  };
+
+  const handleClearAllBaksos = () => {
+    setAppState((prev) => {
+      const next: AppState = {
+        ...prev,
+        baksosMetrics: [],
+        updatedAt: new Date().toISOString(),
       };
       persistStateLocally(next);
       void savePortalConfigToCloud(next);
@@ -988,12 +1149,13 @@ export default function App() {
 
   const handleUpdateBranding = (partial: Partial<BrandingConfig>) => {
     setAppState((prev) => {
-      const next = {
+      const next: AppState = {
         ...prev,
         branding: {
           ...prev.branding,
           ...partial,
         },
+        updatedAt: new Date().toISOString(),
       };
       persistStateLocally(next);
       void savePortalConfigToCloud(next);
@@ -1010,7 +1172,7 @@ export default function App() {
         jadwal: 'Jadwal & Baksos',
         kupon: 'Kupon Jalan Sehat',
       };
-      const next = {
+      const next: AppState = {
         ...prev,
         branding: {
           ...prev.branding,
@@ -1019,6 +1181,7 @@ export default function App() {
             [key]: value,
           },
         },
+        updatedAt: new Date().toISOString(),
       };
       persistStateLocally(next);
       void savePortalConfigToCloud(next);
@@ -1028,7 +1191,11 @@ export default function App() {
 
   const handleAdminUpdateState = (updater: (prev: AppState) => AppState) => {
     setAppState((prev) => {
-      const next = updater(prev);
+      const updated = updater(prev);
+      const next: AppState = {
+        ...updated,
+        updatedAt: new Date().toISOString(),
+      };
       persistStateLocally(next);
       void syncFullStateToCloud(next, prev);
       return next;
@@ -1036,15 +1203,15 @@ export default function App() {
   };
 
   const handleResetDefault = () => {
+    const resetWithTimestamp: AppState = {
+      ...DEFAULT_APP_STATE,
+      updatedAt: new Date().toISOString(),
+    };
     setAppState((prev) => {
-      void syncFullStateToCloud(DEFAULT_APP_STATE, prev);
-      return DEFAULT_APP_STATE;
+      void syncFullStateToCloud(resetWithTimestamp, prev);
+      return resetWithTimestamp;
     });
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(DEFAULT_APP_STATE));
-    } catch {
-      // Ignore
-    }
+    persistStateLocally(resetWithTimestamp);
   };
 
   const navLabels: NavLabelsConfig = appState.branding.navLabels || {
@@ -1062,7 +1229,7 @@ export default function App() {
   const tickerText =
     appState.branding.runningTextItems.length > 0
       ? appState.branding.runningTextItems.join('   ✦   ')
-      : 'Selamat Memperingati Hari Amal Bakti ke-81 Kementerian Agama Republik Indonesia — Kantor Kementerian Agama Kabupaten Tojo Una-Una Tahun 2027.';
+      : 'Belum ada pengumuman aktif dari Panitia HAB ke-81 saat ini.';
 
   return (
     <div className="min-h-screen bg-[#021b15] text-slate-100 flex flex-col">
@@ -1383,7 +1550,7 @@ export default function App() {
           />
         ) : isJournalPageOpen ? (
           <JournalSection
-            journals={appState.journals || DEFAULT_APP_STATE.journals || []}
+            journals={appState.journals ?? []}
             satkerList={appState.satkerList}
             selectedJournalId={selectedJournalId}
             onSelectJournalId={handleSelectJournalArticle}
@@ -1474,6 +1641,12 @@ export default function App() {
               <ScheduleBaksosSection
                 schedules={appState.schedules}
                 baksosMetrics={appState.baksosMetrics}
+                adminPin={appState.branding.adminPin}
+                isAdminUnlocked={isAdminUnlocked}
+                onUnlockAdmin={() => setIsAdminUnlocked(true)}
+                onDeleteSchedule={handleDeleteSchedule}
+                onDeleteBaksos={handleDeleteBaksos}
+                onClearAllBaksos={handleClearAllBaksos}
                 onFocusVenueOnMap={handleFocusVenueOnMap}
                 onOpenAdminTab={handleOpenAdminTab}
               />
@@ -1494,7 +1667,7 @@ export default function App() {
                 }
               >
                 <VideoGallerySection
-                  videos={appState.videos || DEFAULT_APP_STATE.videos || []}
+                  videos={appState.videos ?? []}
                   satkerList={appState.satkerList}
                   adminPin={appState.branding.adminPin}
                   isAdminUnlocked={isAdminUnlocked}
@@ -1522,7 +1695,7 @@ export default function App() {
                 }
               >
                 <SatkerBannerSection
-                  banners={appState.satkerBanners || DEFAULT_APP_STATE.satkerBanners || []}
+                  banners={appState.satkerBanners ?? []}
                   satkerList={appState.satkerList}
                   adminPin={appState.branding.adminPin}
                   isAdminUnlocked={isAdminUnlocked}
