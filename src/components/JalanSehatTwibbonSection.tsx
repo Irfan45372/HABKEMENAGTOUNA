@@ -51,6 +51,7 @@ interface JalanSehatTwibbonSectionProps {
     fullFallbackCoupon?: JalanSehatCoupon
   ) => void;
   onDeleteCoupon?: (couponId: string) => void;
+  onToggleCouponRegistration?: (newStatus: boolean) => void;
 }
 
 export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> = ({
@@ -64,6 +65,7 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
   onMarkCouponWinner,
   onUpdateCoupon,
   onDeleteCoupon,
+  onToggleCouponRegistration,
 }) => {
   const [activeMode, setActiveMode] = useState<'kupon' | 'verifikasi' | 'twibbon'>('kupon');
 
@@ -75,7 +77,7 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
   const [couponError, setCouponError] = useState<string | null>(null);
   const [couponSavedNotice, setCouponSavedNotice] = useState<string | null>(null);
 
-  // Admin PIN Modal State for Locked Actions (Edit / Delete / Lucky Draw)
+  // Admin PIN Modal State for Locked Actions (Edit / Delete / Lucky Draw / Toggle Registration)
   const [showPinModal, setShowPinModal] = useState<boolean>(false);
   const [pinInput, setPinInput] = useState<string>('');
   const [pinError, setPinError] = useState<string | null>(null);
@@ -83,6 +85,7 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
     | { type: 'edit'; coupon: JalanSehatCoupon }
     | { type: 'delete'; couponId: string; nomorKupon: string }
     | { type: 'open_lucky_draw' }
+    | { type: 'toggle_coupon_status'; targetStatus: boolean }
     | null
   >(null);
 
@@ -347,6 +350,8 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
           executeDeleteCoupon(pendingAdminAction.couponId, pendingAdminAction.nomorKupon);
         } else if (pendingAdminAction.type === 'open_lucky_draw') {
           setLuckyModalOpen(true);
+        } else if (pendingAdminAction.type === 'toggle_coupon_status') {
+          onToggleCouponRegistration?.(pendingAdminAction.targetStatus);
         }
         setPendingAdminAction(null);
       }
@@ -650,9 +655,19 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
     };
   }, [twibbonName, twibbonSatker, twibbonPhotoUrl, branding]);
 
+  const isRegistrationOpen = branding.isCouponRegistrationOpen !== false;
+
   const handleGenerateCoupon = (e: React.FormEvent) => {
     e.preventDefault();
     setCouponError(null);
+
+    if (!isRegistrationOpen) {
+      setCouponError(
+        branding.couponRegistrationClosedMessage ||
+          'Pendaftaran kupon undian Jalan Sehat saat ini sedang ditutup oleh Panitia.'
+      );
+      return;
+    }
 
     if (!namaPeserta || namaPeserta.trim().length < 2) {
       setCouponError('Silakan isi Nama Lengkap Peserta Jalan Sehat.');
@@ -918,14 +933,82 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
           <div className="lg:col-span-5 bg-[#03251c] border border-emerald-800/80 rounded-2xl p-6 space-y-4 max-h-[580px] overflow-y-auto">
             <form onSubmit={handleGenerateCoupon} className="space-y-4">
               <div className="border-b border-emerald-800/70 pb-3">
-                <h3 className="text-base font-bold text-white flex items-center gap-2">
-                  <QrCode className="w-4 h-4 text-amber-400" />
-                  Registrasi Cepat Kupon Jalan Sehat
-                </h3>
-                <p className="text-xs text-slate-300 mt-0.5">
-                  Isi data diri untuk menerbitkan kartu kupon digital ber-QR Code resmi
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <QrCode className="w-4 h-4 text-amber-400" />
+                    <span>Registrasi Cepat Kupon Jalan Sehat</span>
+                  </h3>
+                  <div className="flex items-center gap-2">
+                    {/* Status Badge ON/OFF */}
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold flex items-center gap-1 border ${
+                        isRegistrationOpen
+                          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                          : 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                      }`}
+                    >
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full ${
+                          isRegistrationOpen ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'
+                        }`}
+                      />
+                      <span>{isRegistrationOpen ? 'BUKA (ON)' : 'DITUTUP (OFF)'}</span>
+                    </span>
+
+                    {/* Quick Admin Toggle Button */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const target = !isRegistrationOpen;
+                        if (!isAdminUnlocked) {
+                          setPendingAdminAction({
+                            type: 'toggle_coupon_status',
+                            targetStatus: target,
+                          });
+                          setPinInput('');
+                          setPinError(null);
+                          setShowPinModal(true);
+                          return;
+                        }
+                        onToggleCouponRegistration?.(target);
+                      }}
+                      className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#021b15] hover:bg-emerald-950 text-amber-300 border border-amber-400/40 cursor-pointer flex items-center gap-1"
+                      title={
+                        isAdminUnlocked
+                          ? isRegistrationOpen
+                            ? 'Klik untuk Menutup/Mengunci Pendaftaran Kupon'
+                            : 'Klik untuk Membuka Kembali Pendaftaran Kupon'
+                          : 'Buka PIN Admin untuk Mengatur Buka/Tutup Kupon'
+                      }
+                    >
+                      <Lock className="w-2.5 h-2.5 text-amber-400" />
+                      <span>{isRegistrationOpen ? 'Kunci Kupon' : 'Buka Kupon'}</span>
+                    </button>
+                  </div>
+                </div>
+                <p className="text-xs text-slate-300">
+                  {isRegistrationOpen
+                    ? 'Isi data diri untuk menerbitkan kartu kupon digital ber-QR Code resmi'
+                    : 'Pendaftaran kupon undian jalan sehat saat ini ditutup sementara oleh Panitia'}
                 </p>
               </div>
+
+              {/* Banner Pemberitahuan Khusus Saat Ditutup */}
+              {!isRegistrationOpen && (
+                <div
+                  role="status"
+                  className="p-3.5 rounded-xl bg-amber-950/80 border border-amber-500/60 text-xs text-amber-200 space-y-1.5"
+                >
+                  <div className="font-bold flex items-center gap-2 text-amber-300">
+                    <Lock className="w-4 h-4 text-amber-400 shrink-0" />
+                    <span>Pendaftaran Kupon Sedang Ditutup</span>
+                  </div>
+                  <p className="leading-relaxed text-slate-200 text-[11.5px]">
+                    {branding.couponRegistrationClosedMessage ||
+                      'Pendaftaran kupon undian Jalan Sehat Kerukunan saat ini sedang ditutup sementara oleh Panitia. Nantikan pengumuman sesi pendaftaran berikutnya.'}
+                  </p>
+                </div>
+              )}
 
               {couponError && (
                 <div
@@ -946,7 +1029,7 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
                 </div>
               )}
 
-              <div>
+              <div className={!isRegistrationOpen ? 'opacity-50 pointer-events-none' : ''}>
                 <label
                   htmlFor="cpn-name"
                   className="block text-xs font-semibold text-slate-200 mb-1"
@@ -956,14 +1039,15 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
                 <input
                   id="cpn-name"
                   type="text"
+                  disabled={!isRegistrationOpen}
                   value={namaPeserta}
                   onChange={(e) => setNamaPeserta(e.target.value)}
                   placeholder="Contoh: Drs. H. Muh. Syahrir, M.H."
-                  className="w-full px-3.5 py-2 rounded-lg bg-[#021b15] border border-emerald-700/80 text-sm text-white focus:outline-none focus:border-amber-400"
+                  className="w-full px-3.5 py-2 rounded-lg bg-[#021b15] border border-emerald-700/80 text-sm text-white focus:outline-none focus:border-amber-400 disabled:bg-emerald-950/50 disabled:cursor-not-allowed"
                 />
               </div>
 
-              <div>
+              <div className={!isRegistrationOpen ? 'opacity-50 pointer-events-none' : ''}>
                 <label
                   htmlFor="cpn-satker"
                   className="block text-xs font-semibold text-slate-200 mb-1"
@@ -972,9 +1056,10 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
                 </label>
                 <select
                   id="cpn-satker"
+                  disabled={!isRegistrationOpen}
                   value={satkerAtauUmum}
                   onChange={(e) => setSatkerAtauUmum(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-lg bg-[#021b15] border border-emerald-700/80 text-sm text-white focus:outline-none focus:border-amber-400"
+                  className="w-full px-3.5 py-2 rounded-lg bg-[#021b15] border border-emerald-700/80 text-sm text-white focus:outline-none focus:border-amber-400 disabled:bg-emerald-950/50 disabled:cursor-not-allowed"
                 >
                   {satkerList.map((s) => (
                     <option key={s} value={s}>
@@ -984,7 +1069,7 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
                 </select>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className={`grid grid-cols-1 sm:grid-cols-2 gap-3 ${!isRegistrationOpen ? 'opacity-50 pointer-events-none' : ''}`}>
                 <div>
                   <label
                     htmlFor="cpn-nik"
@@ -995,10 +1080,11 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
                   <input
                     id="cpn-nik"
                     type="text"
+                    disabled={!isRegistrationOpen}
                     value={nikAtauNip}
                     onChange={(e) => setNikAtauNip(e.target.value)}
                     placeholder="19850101..."
-                    className="w-full px-3.5 py-2 rounded-lg bg-[#021b15] border border-emerald-700/80 text-sm text-white focus:outline-none focus:border-amber-400"
+                    className="w-full px-3.5 py-2 rounded-lg bg-[#021b15] border border-emerald-700/80 text-sm text-white focus:outline-none focus:border-amber-400 disabled:bg-emerald-950/50 disabled:cursor-not-allowed"
                   />
                 </div>
                 <div>
@@ -1011,19 +1097,27 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
                   <input
                     id="cpn-hp"
                     type="tel"
+                    disabled={!isRegistrationOpen}
                     value={noHp}
                     onChange={(e) => setNoHp(e.target.value)}
                     placeholder="0812..."
-                    className="w-full px-3.5 py-2 rounded-lg bg-[#021b15] border border-emerald-700/80 text-sm text-white focus:outline-none focus:border-amber-400"
+                    className="w-full px-3.5 py-2 rounded-lg bg-[#021b15] border border-emerald-700/80 text-sm text-white focus:outline-none focus:border-amber-400 disabled:bg-emerald-950/50 disabled:cursor-not-allowed"
                   />
                 </div>
               </div>
 
               <button
                 type="submit"
-                className="w-full py-2.5 px-4 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-sm transition-colors cursor-pointer shadow-md"
+                disabled={!isRegistrationOpen}
+                className={`w-full py-2.5 px-4 rounded-lg font-bold text-sm transition-colors shadow-md ${
+                  isRegistrationOpen
+                    ? 'bg-amber-400 hover:bg-amber-300 text-slate-950 cursor-pointer'
+                    : 'bg-emerald-950 text-slate-400 border border-emerald-800 cursor-not-allowed'
+                }`}
               >
-                Terbitkan Kupon QR Digital Sekarang
+                {isRegistrationOpen
+                  ? 'Terbitkan Kupon QR Digital Sekarang'
+                  : 'Pendaftaran Kupon Sedang Ditutup (Terkunci)'}
               </button>
             </form>
 

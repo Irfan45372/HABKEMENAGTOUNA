@@ -2843,6 +2843,102 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                         </button>
                       </div>
 
+                      {/* FITUR KUNCI ON/OFF PENDAFTARAN KUPON (ADMIN TOGGLE) */}
+                      <div className="bg-[#03251c] border-2 border-amber-400/50 rounded-xl p-3.5 space-y-3">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`w-3 h-3 rounded-full ${
+                                appState.branding.isCouponRegistrationOpen !== false
+                                  ? 'bg-emerald-400 animate-pulse'
+                                  : 'bg-rose-500'
+                              }`}
+                            />
+                            <div>
+                              <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                                <span>Kunci Pendaftaran Kupon Jalan Sehat:</span>
+                                <span
+                                  className={`px-2 py-0.5 rounded text-[11px] font-extrabold uppercase ${
+                                    appState.branding.isCouponRegistrationOpen !== false
+                                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                      : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                                  }`}
+                                >
+                                  {appState.branding.isCouponRegistrationOpen !== false
+                                    ? '✓ DIBUKA (ON)'
+                                    : '🔒 DITUTUP (OFF)'}
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-slate-300 mt-0.5">
+                                {appState.branding.isCouponRegistrationOpen !== false
+                                  ? 'Masyarakat/pegawai bebas mendaftar kupon QR digital baru.'
+                                  : 'Formulir kupon dikunci dari publik. Peserta tidak dapat mendaftar baru.'}
+                              </p>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const nextStatus = !(appState.branding.isCouponRegistrationOpen !== false);
+                              onUpdateState((prev) => ({
+                                ...prev,
+                                branding: {
+                                  ...prev.branding,
+                                  isCouponRegistrationOpen: nextStatus,
+                                },
+                              }));
+                              notify(
+                                nextStatus
+                                  ? 'Pendaftaran Kupon Jalan Sehat berhasil DIBUKA (ON) untuk publik.'
+                                  : 'Pendaftaran Kupon Jalan Sehat berhasil DIKUNCI / DITUTUP (OFF).'
+                              );
+                            }}
+                            className={`px-4 py-2 rounded-lg font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-md transition-all ${
+                              appState.branding.isCouponRegistrationOpen !== false
+                                ? 'bg-rose-600 hover:bg-rose-500 text-white border border-rose-400/50'
+                                : 'bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/50'
+                            }`}
+                          >
+                            <span>
+                              {appState.branding.isCouponRegistrationOpen !== false
+                                ? '🔒 Kunci / Tutup Pendaftaran (OFF)'
+                                : '🔓 Buka Pendaftaran Kupon (ON)'}
+                            </span>
+                          </button>
+                        </div>
+
+                        {/* Input Keterangan Alasan / Jadwal Saat Kupon Ditutup */}
+                        {appState.branding.isCouponRegistrationOpen === false && (
+                          <div className="pt-2 border-t border-emerald-800/80">
+                            <label className="block text-[11px] font-semibold text-amber-300 mb-1">
+                              Pemberitahuan Penutupan untuk Pengguna di Web:
+                            </label>
+                            <div className="flex gap-2">
+                              <input
+                                type="text"
+                                value={
+                                  appState.branding.couponRegistrationClosedMessage ||
+                                  'Pendaftaran kupon undian Jalan Sehat Kerukunan saat ini sedang ditutup sementara oleh Panitia. Nantikan pembukaan sesi pendaftaran berikutnya atau hubungi Panitia HAB ke-81.'
+                                }
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  onUpdateState((prev) => ({
+                                    ...prev,
+                                    branding: {
+                                      ...prev.branding,
+                                      couponRegistrationClosedMessage: val,
+                                    },
+                                  }));
+                                }}
+                                placeholder="Tulis alasan atau jadwal pembukaan kembali..."
+                                className="flex-1 px-3 py-1.5 rounded-lg bg-[#021b15] border border-amber-400/40 text-xs text-white focus:outline-none focus:border-amber-300"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
                       {/* Official PDF Report Buttons for Jalan Sehat Winners & All Coupons */}
                       <div className="flex flex-wrap items-center gap-2 bg-[#03251c] border border-amber-400/40 rounded-lg p-2.5">
                         <button

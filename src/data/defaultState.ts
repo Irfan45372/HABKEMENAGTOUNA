@@ -36,6 +36,9 @@ export const DEFAULT_APP_STATE: AppState = {
       'BAKTI SOSIAL: Kegiatan Donor Darah ASN, Santunan Yatim, dan Layanan Sertifikasi Halal Gratis berlangsung di Aula FKUB & Masjid Agung Ampana.',
     ],
     allowCustomCompetitionProposal: true,
+    isCouponRegistrationOpen: true,
+    couponRegistrationClosedMessage:
+      'Pendaftaran kupon undian Jalan Sehat Kerukunan saat ini sedang ditutup sementara oleh Panitia. Nantikan pembukaan sesi pendaftaran berikutnya atau hubungi Panitia HAB ke-81.',
     adminPin: '812027',
     welcomeVoice: {
       enabled: true,

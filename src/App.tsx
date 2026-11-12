@@ -1553,6 +1553,9 @@ export default function App() {
                 onMarkCouponWinner={handleMarkCouponWinner}
                 onUpdateCoupon={handleUpdateCoupon}
                 onDeleteCoupon={handleDeleteCoupon}
+                onToggleCouponRegistration={(newStatus) => {
+                  handleUpdateBranding({ isCouponRegistrationOpen: newStatus });
+                }}
               />
             </ViewportLazySection>
 

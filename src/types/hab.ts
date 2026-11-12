@@ -194,6 +194,8 @@ export interface BrandingConfig {
   runningTextItems: string[];
   announcementLetters?: (AnnouncementLetter | null)[];
   allowCustomCompetitionProposal: boolean;
+  isCouponRegistrationOpen?: boolean; // Toggle ON/OFF pendaftaran kupon jalan sehat (Default: true)
+  couponRegistrationClosedMessage?: string; // Pesan saat pendaftaran kupon ditutup oleh admin
   adminPin: string;
   welcomeVoice?: WelcomeVoiceConfig;
 }
