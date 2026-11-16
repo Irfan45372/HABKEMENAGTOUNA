@@ -521,8 +521,9 @@ export const HeroScene3D: React.FC<HeroScene3DProps> = ({
 
     // Part 5: Back Medallion Face Disc (Dynamic HAB-81 Logo)
     const backDiscGeo = new THREE.CylinderGeometry(1.46, 1.46, 0.08, 48);
-    backDiscGeo.rotateX(-Math.PI / 2);
-    backDiscGeo.rotateZ(-Math.PI / 2);
+    backDiscGeo.rotateX(Math.PI / 2);
+    backDiscGeo.rotateZ(Math.PI / 2);
+    backDiscGeo.rotateY(Math.PI);
     const backDiscMesh = new THREE.Mesh(backDiscGeo, backFaceMat);
     backDiscMesh.position.z = -0.16;
     medallionGroup.add(backDiscMesh);
