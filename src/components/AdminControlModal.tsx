@@ -18,6 +18,7 @@ import {
 } from '../types/hab';
 import { DEFAULT_APP_STATE } from '../data/defaultState';
 import {
+  ALLOW_VIDEO_FILE_UPLOAD,
   compressBannerImageFile,
   extractYoutubeEmbedUrl,
   normalizeBannerImageUrl,
@@ -530,6 +531,12 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
     if (!newVidJudul.trim() || !newVidUrl.trim()) return;
     const cleanUrl = newVidUrl.trim();
     const isYt = Boolean(extractYoutubeEmbedUrl(cleanUrl));
+    if (!ALLOW_VIDEO_FILE_UPLOAD && !isYt) {
+      notify(
+        'Unggah file video (.MP4) sedang dinonaktifkan sementara. Mohon masukkan Link YouTube resmi (watch / live / youtu.be).'
+      );
+      return;
+    }
     const item: VideoItem = {
       id: `vid-${Date.now()}`,
       judul: newVidJudul.trim(),
@@ -558,6 +565,17 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
   };
 
   const handleUpdateVideo = (id: string, partial: Partial<VideoItem>) => {
+    if (
+      !ALLOW_VIDEO_FILE_UPLOAD &&
+      partial.youtubeUrl !== undefined &&
+      partial.youtubeUrl.trim() !== '' &&
+      !extractYoutubeEmbedUrl(partial.youtubeUrl.trim())
+    ) {
+      notify(
+        'Unggah/URL video non-YouTube sedang dinonaktifkan sementara. Gunakan Link YouTube resmi.'
+      );
+      return;
+    }
     onUpdateState((prev) => {
       const currentVideos = prev.videos ?? [];
       return {
@@ -2430,11 +2448,15 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                       <h3 className="text-sm font-bold text-amber-300 flex items-center gap-2">
                         <Video className="w-4 h-4" />
                         <span>
-                          Kelola Galeri Video, Upload File MP4 (Khusus Admin) & Link YouTube ({videosList.length})
+                          {ALLOW_VIDEO_FILE_UPLOAD
+                            ? `Kelola Galeri Video, Upload File MP4 (Khusus Admin) & Link YouTube (${videosList.length})`
+                            : `Kelola Galeri Video & Link YouTube (${videosList.length})`}
                         </span>
                       </h3>
                       <span className="text-[11px] text-emerald-300">
-                        Pengguna publik hanya dapat mengirim Link YouTube · Upload File MP4 hanya tersedia di Panel Admin ini
+                        {ALLOW_VIDEO_FILE_UPLOAD
+                          ? 'Pengguna publik hanya dapat mengirim Link YouTube · Upload File MP4 hanya tersedia di Panel Admin ini'
+                          : 'Upload file video (.MP4) sedang dinonaktifkan sementara · Admin & Pengguna cukup memakai Link YouTube'}
                       </span>
                     </div>
 
@@ -2472,43 +2494,49 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                           type="text"
                           value={newVidUrl}
                           onChange={(e) => setNewVidUrl(e.target.value)}
-                          placeholder="Link YouTube atau URL .MP4 *"
+                          placeholder={
+                            ALLOW_VIDEO_FILE_UPLOAD
+                              ? 'Link YouTube atau URL .MP4 *'
+                              : 'Tempel Link YouTube Resmi *'
+                          }
                           className="flex-1 px-3 py-2 rounded-lg bg-[#03251c] border border-emerald-700 text-xs text-amber-200 font-mono-tabular min-w-0"
                         />
-                        <label
-                          title="Unggah File Video MP4/WebM dari Komputer/HP Admin"
-                          className="px-2.5 py-2 rounded-lg bg-emerald-800 hover:bg-emerald-700 border border-amber-400/50 text-amber-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer shrink-0"
-                        >
-                          <Upload className="w-3.5 h-3.5" />
-                          <span>File MP4</span>
-                          <input
-                            type="file"
-                            accept="video/mp4,video/webm"
-                            onChange={(e) => {
-                              const file = e.target.files?.[0];
-                              if (!file) return;
-                              const maxBytes = 4 * 1024 * 1024;
-                              if (file.size > maxBytes) {
-                                notify(
-                                  `Ukuran file (${(file.size / (1024 * 1024)).toFixed(1)} MB) melebihi batas memori lokal browser (4 MB). Gunakan file MP4 pendek ≤ 4 MB atau masukkan URL file MP4.`
-                                );
-                                return;
-                              }
-                              const reader = new FileReader();
-                              reader.onload = () => {
-                                if (typeof reader.result === 'string') {
-                                  setNewVidUrl(reader.result);
-                                  if (!newVidJudul.trim()) {
-                                    setNewVidJudul(file.name.replace(/\.[^/.]+$/, ''));
-                                  }
-                                  notify(`File video "${file.name}" siap disimpan oleh Admin.`);
+                        {ALLOW_VIDEO_FILE_UPLOAD && (
+                          <label
+                            title="Unggah File Video MP4/WebM dari Komputer/HP Admin"
+                            className="px-2.5 py-2 rounded-lg bg-emerald-800 hover:bg-emerald-700 border border-amber-400/50 text-amber-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer shrink-0"
+                          >
+                            <Upload className="w-3.5 h-3.5" />
+                            <span>File MP4</span>
+                            <input
+                              type="file"
+                              accept="video/mp4,video/webm"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (!file) return;
+                                const maxBytes = 4 * 1024 * 1024;
+                                if (file.size > maxBytes) {
+                                  notify(
+                                    `Ukuran file (${(file.size / (1024 * 1024)).toFixed(1)} MB) melebihi batas memori lokal browser (4 MB). Gunakan file MP4 pendek ≤ 4 MB atau masukkan URL file MP4.`
+                                  );
+                                  return;
                                 }
-                              };
-                              reader.readAsDataURL(file);
-                            }}
-                            className="hidden"
-                          />
-                        </label>
+                                const reader = new FileReader();
+                                reader.onload = () => {
+                                  if (typeof reader.result === 'string') {
+                                    setNewVidUrl(reader.result);
+                                    if (!newVidJudul.trim()) {
+                                      setNewVidJudul(file.name.replace(/\.[^/.]+$/, ''));
+                                    }
+                                    notify(`File video "${file.name}" siap disimpan oleh Admin.`);
+                                  }
+                                };
+                                reader.readAsDataURL(file);
+                              }}
+                              className="hidden"
+                            />
+                          </label>
+                        )}
                       </div>
                       <input
                         type="text"

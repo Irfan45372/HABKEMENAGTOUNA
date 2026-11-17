@@ -13,6 +13,7 @@
         "medalStandings": { "type": "array", "description": "Medal standings per Satker" },
         "schedules": { "type": "array", "description": "Event schedule items" },
         "baksosMetrics": { "type": "object", "description": "Bakti sosial impact metrics" },
+        "tournamentDraws": { "type": "array", "description": "Live tournament pool, bracket, and performance order draws" },
         "updatedAt": { "type": "string", "description": "ISO timestamp of last update" }
       },
       "required": ["branding", "competitions", "schedules"]

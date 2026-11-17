@@ -4,6 +4,7 @@ import {
   BrandingConfig,
   JalanSehatCoupon,
   ParticipantRegistration,
+  TournamentDrawSession,
 } from '../types/hab';
 import {
   ensureWhiteRibbonKemenagCanvas,
@@ -526,3 +527,109 @@ export function downloadRegistrationsCsvReport(
   window.setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
+/**
+ * Generates and downloads an official Berita Acara Hasil Undian Lomba PDF (Kop Kemenag Touna).
+ */
+export async function downloadTournamentDrawPdfReport(
+  session: TournamentDrawSession,
+  branding?: BrandingConfig
+): Promise<void> {
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const logoDataUrl = await loadKemenagLogoDataUrl(branding);
+
+  const modeTitle =
+    session.mode === 'nomor_urut'
+      ? 'BERITA ACARA UNDIAN NOMOR URUT TAMPIL'
+      : session.mode === 'pool'
+      ? 'BERITA ACARA UNDIAN PEMBAGIAN POOL / GRUP'
+      : 'BERITA ACARA UNDIAN BAGAN SISTEM GUGUR';
+
+  const startY = drawOfficialLetterhead(
+    doc,
+    logoDataUrl,
+    modeTitle,
+    `${session.judulLomba} (${session.kategoriUtama}) · Waktu Undian: ${session.waktuUndian}`
+  );
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(51, 65, 85);
+  doc.text(
+    `Jumlah Tim/Peserta Terundi: ${session.pesertaInput.length} · Dicetak: ${formatWitaPrintTimestamp()}`,
+    14,
+    startY + 2
+  );
+
+  let currentY = startY + 6;
+
+  if (session.mode === 'nomor_urut' && session.nomorUrutResult) {
+    autoTable(doc, {
+      startY: currentY,
+      head: [['No. Urut Tampil', 'Nama Tim / Peserta / Kontingen']],
+      body: session.nomorUrutResult.map((name, idx) => [`Urut #${idx + 1}`, name]),
+      styles: { fontSize: 9, cellPadding: 3 },
+      headStyles: { fillColor: [6, 78, 59], textColor: [255, 255, 255], fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [241, 245, 249] },
+      columnStyles: { 0: { cellWidth: 38, halign: 'center', fontStyle: 'bold' } },
+      margin: { left: 14, right: 14 },
+    });
+    currentY = ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY || currentY + 30);
+  } else if (session.mode === 'pool' && session.poolGroups) {
+    const rows: string[][] = [];
+    session.poolGroups.forEach((grp) => {
+      grp.teams.forEach((t, idx) => {
+        rows.push([grp.groupName, String(idx + 1), t]);
+      });
+    });
+    autoTable(doc, {
+      startY: currentY,
+      head: [['Pool / Grup', 'No.', 'Nama Tim / Kontingen']],
+      body: rows,
+      styles: { fontSize: 9, cellPadding: 3 },
+      headStyles: { fillColor: [6, 78, 59], textColor: [255, 255, 255], fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [241, 245, 249] },
+      columnStyles: {
+        0: { cellWidth: 32, fontStyle: 'bold' },
+        1: { cellWidth: 16, halign: 'center' },
+      },
+      margin: { left: 14, right: 14 },
+    });
+    currentY = ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY || currentY + 30);
+  } else if (session.mode === 'gugur' && session.knockoutMatches) {
+    autoTable(doc, {
+      startY: currentY,
+      head: [['Partai', 'Tim / Kontingen A', 'VS', 'Tim / Kontingen B']],
+      body: session.knockoutMatches.map((m) => [
+        `Partai #${m.matchNumber}`,
+        m.teamA,
+        m.isBye ? 'BYE' : 'VS',
+        m.teamB,
+      ]),
+      styles: { fontSize: 9, cellPadding: 3 },
+      headStyles: { fillColor: [6, 78, 59], textColor: [255, 255, 255], fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [241, 245, 249] },
+      columnStyles: {
+        0: { cellWidth: 26, fontStyle: 'bold', halign: 'center' },
+        2: { cellWidth: 16, halign: 'center', fontStyle: 'bold' },
+      },
+      margin: { left: 14, right: 14 },
+    });
+    currentY = ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY || currentY + 30);
+  }
+
+  if (session.catatan) {
+    doc.setFontSize(8.5);
+    doc.setTextColor(71, 85, 105);
+    doc.text(`Catatan Technical Meeting: ${session.catatan}`, 14, currentY + 8, {
+      maxWidth: 182,
+    });
+    currentY += 12;
+  }
+
+  drawSignatureFooter(doc, currentY + 4);
+  const safeSlug = session.judulLomba
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+  doc.save(`Hasil-Undian-HAB81-${safeSlug || 'lomba'}.pdf`);
+}

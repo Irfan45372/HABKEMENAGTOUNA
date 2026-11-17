@@ -5,7 +5,15 @@ import {
   MedalStanding,
   ParticipantFormat,
   ParticipantRegistration,
+  TournamentDrawGroup,
+  TournamentDrawMatch,
 } from '../types/hab';
+
+/**
+ * Feature flag to enable/disable raw video file (.MP4/.WebM) uploads.
+ * Kept false while Firebase Cloud Storage is not connected; flip to true if Storage is enabled later.
+ */
+export const ALLOW_VIDEO_FILE_UPLOAD: boolean = false;
 
 export interface CountdownParts {
   days: number;
@@ -448,3 +456,77 @@ export function validateImportedState(raw: unknown): { valid: boolean; state?: A
   return { valid: true, state: candidate as AppState };
 }
 
+/**
+ * Cryptographically unbiased Fisher-Yates shuffle for live tournament draws.
+ */
+export function shuffleParticipantsSecure(items: string[]): string[] {
+  const arr = [...items];
+  const getRandomInt = (maxExclusive: number): number => {
+    if (
+      typeof window !== 'undefined' &&
+      window.crypto &&
+      typeof window.crypto.getRandomValues === 'function'
+    ) {
+      const buf = new Uint32Array(1);
+      window.crypto.getRandomValues(buf);
+      return buf[0] % maxExclusive;
+    }
+    return Math.floor(Math.random() * maxExclusive);
+  };
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = getRandomInt(i + 1);
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+/**
+ * Splits a shuffled participant list evenly across N groups (Grup A, Grup B, ...).
+ */
+export function generatePoolDrawGroups(
+  shuffledTeams: string[],
+  groupCount: number
+): TournamentDrawGroup[] {
+  const safeCount = Math.max(1, Math.min(groupCount, Math.max(1, shuffledTeams.length)));
+  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const groups: TournamentDrawGroup[] = Array.from({ length: safeCount }, (_, idx) => ({
+    groupName: `Grup ${letters[idx] || idx + 1}`,
+    teams: [],
+  }));
+  shuffledTeams.forEach((team, idx) => {
+    groups[idx % safeCount].teams.push(team);
+  });
+  return groups;
+}
+
+/**
+ * Pairs a shuffled participant list into round-1 knockout matchups (with automatic BYE if odd).
+ */
+export function generateKnockoutDrawMatches(
+  shuffledTeams: string[]
+): TournamentDrawMatch[] {
+  const matches: TournamentDrawMatch[] = [];
+  let matchNo = 1;
+  for (let i = 0; i < shuffledTeams.length; i += 2) {
+    const teamA = shuffledTeams[i];
+    const teamB = shuffledTeams[i + 1];
+    if (teamB) {
+      matches.push({
+        matchNumber: matchNo++,
+        roundLabel: 'Babak Penyisihan / Putaran 1',
+        teamA,
+        teamB,
+        isBye: false,
+      });
+    } else {
+      matches.push({
+        matchNumber: matchNo++,
+        roundLabel: 'Babak Penyisihan / Putaran 1',
+        teamA,
+        teamB: 'BYE (Lolos Langsung Babak Berikutnya)',
+        isBye: true,
+      });
+    }
+  }
+  return matches;
+}

@@ -196,8 +196,40 @@ export interface BrandingConfig {
   allowCustomCompetitionProposal: boolean;
   isCouponRegistrationOpen?: boolean; // Toggle ON/OFF pendaftaran kupon jalan sehat (Default: true)
   couponRegistrationClosedMessage?: string; // Pesan saat pendaftaran kupon ditutup oleh admin
+  liveDrawYoutubeUrl?: string; // Link YouTube Live aktif untuk Mesin Undian Full Lomba & Nomor Urut
   adminPin: string;
   welcomeVoice?: WelcomeVoiceConfig;
+}
+
+export type TournamentDrawMode = 'pool' | 'gugur' | 'nomor_urut';
+
+export interface TournamentDrawGroup {
+  groupName: string;
+  teams: string[];
+}
+
+export interface TournamentDrawMatch {
+  matchNumber: number;
+  roundLabel: string;
+  teamA: string;
+  teamB: string;
+  isBye?: boolean;
+}
+
+export interface TournamentDrawSession {
+  id: string;
+  judulLomba: string;
+  kategoriUtama: 'Olahraga' | 'Lomba';
+  mode: TournamentDrawMode;
+  youtubeUrl?: string;
+  pesertaInput: string[];
+  nomorUrutResult?: string[];
+  poolGroups?: TournamentDrawGroup[];
+  knockoutMatches?: TournamentDrawMatch[];
+  jumlahPool?: number;
+  catatan?: string;
+  waktuUndian: string;
+  syncedToScoreboard?: boolean;
 }
 
 export interface VideoItem {
@@ -270,7 +302,6 @@ export interface AppState {
   videos?: VideoItem[];
   satkerBanners?: SatkerBannerItem[];
   journals?: JournalArticle[];
+  tournamentDraws?: TournamentDrawSession[];
   updatedAt?: string;
 }
-
-

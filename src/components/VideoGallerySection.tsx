@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { VideoItem } from '../types/hab';
-import { extractYoutubeEmbedUrl } from '../utils/habLogic';
+import { ALLOW_VIDEO_FILE_UPLOAD, extractYoutubeEmbedUrl } from '../utils/habLogic';
 import {
   Check,
   CheckCircle2,
@@ -9,6 +9,8 @@ import {
   Film,
   Image as ImageIcon,
   Lock,
+  Maximize2,
+  Minimize2,
   Play,
   PlusCircle,
   Sparkles,
@@ -81,6 +83,7 @@ export const VideoGallerySection: React.FC<VideoGallerySectionProps> = ({
   const [editDeskripsi, setEditDeskripsi] = useState<string>('');
   const [editBannerTeks, setEditBannerTeks] = useState<string>('');
   const [editBannerUrl, setEditBannerUrl] = useState<string>('');
+  const [isVideoFullscreen, setIsVideoFullscreen] = useState<boolean>(false);
 
   const filteredVideos = approvedVideos.filter((v) => {
     const matchCat = selectedCategory === 'Semua' || v.kategori === selectedCategory;
@@ -146,6 +149,12 @@ export const VideoGallerySection: React.FC<VideoGallerySectionProps> = ({
     if (!editingVideoId || !onUpdateVideo) return;
     const cleanUrl = editYoutubeUrl.trim();
     const isYt = Boolean(extractYoutubeEmbedUrl(cleanUrl));
+    if (!ALLOW_VIDEO_FILE_UPLOAD && !isYt) {
+      setUploadError(
+        'Unggah/URL video non-YouTube sedang dinonaktifkan sementara. Gunakan Link YouTube resmi.'
+      );
+      return;
+    }
     onUpdateVideo(editingVideoId, {
       judul: editJudul.trim() || 'Tayangan Video HAB ke-81',
       satker: editSatker.trim() || 'Kemenag Tojo Una-Una',
@@ -185,7 +194,9 @@ export const VideoGallerySection: React.FC<VideoGallerySectionProps> = ({
     const embed = extractYoutubeEmbedUrl(youtubeUrl);
     if (!embed) {
       setUploadError(
-        'Pengiriman langsung oleh pengguna hanya menerima Link YouTube resmi (contoh: https://www.youtube.com/watch?v=... atau https://youtu.be/...). Untuk upload file video .MP4 hanya dapat dilakukan oleh Admin Panitia.'
+        ALLOW_VIDEO_FILE_UPLOAD
+          ? 'Pengiriman langsung oleh pengguna hanya menerima Link YouTube resmi (contoh: https://www.youtube.com/watch?v=... atau https://youtu.be/...). Untuk upload file video .MP4 hanya dapat dilakukan oleh Admin Panitia.'
+          : 'Pengiriman video hanya menerima Link YouTube resmi (contoh: https://www.youtube.com/watch?v=... atau https://youtu.be/...). Fitur unggah file video (.MP4) sedang dinonaktifkan.'
       );
       return;
     }
@@ -276,7 +287,7 @@ export const VideoGallerySection: React.FC<VideoGallerySectionProps> = ({
             </span>
           )}
 
-          {onOpenAdminVideoTab && (
+          {ALLOW_VIDEO_FILE_UPLOAD && onOpenAdminVideoTab && (
             <button
               type="button"
               onClick={onOpenAdminVideoTab}
@@ -342,10 +353,12 @@ export const VideoGallerySection: React.FC<VideoGallerySectionProps> = ({
                 Formulir Pengiriman Link YouTube & Banner Ucapan Satker (Opsional)
               </h3>
               <p className="text-xs text-emerald-300 mt-0.5">
-                Pengguna & kontingen Satker dapat langsung mengirimkan tautan video YouTube beserta Banner Ucapan Satker (opsional). Untuk unggah file video (.MP4) dikhususkan bagi Admin Panitia.
+                {ALLOW_VIDEO_FILE_UPLOAD
+                  ? 'Pengguna & kontingen Satker dapat langsung mengirimkan tautan video YouTube beserta Banner Ucapan Satker (opsional). Untuk unggah file video (.MP4) dikhususkan bagi Admin Panitia.'
+                  : 'Pengguna & kontingen Satker dapat mengirimkan tautan video YouTube resmi beserta Banner Ucapan Satker (opsional). Fitur unggah file video (.MP4) dinonaktifkan sementara.'}
               </p>
             </div>
-            {onOpenAdminVideoTab && (
+            {ALLOW_VIDEO_FILE_UPLOAD && onOpenAdminVideoTab && (
               <button
                 type="button"
                 onClick={onOpenAdminVideoTab}
@@ -573,10 +586,10 @@ export const VideoGallerySection: React.FC<VideoGallerySectionProps> = ({
               {activeEmbedUrl ? (
                 <iframe
                   title={activeVideo?.judul || 'Tayangan Video HAB ke-81'}
-                  src={activeEmbedUrl}
+                  src={`${activeEmbedUrl}?fs=1&playsinline=1&rel=0`}
                   loading="lazy"
                   className="w-full h-full border-0"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
                   allowFullScreen
                 />
               ) : activeVideo?.videoFileUrl ? (
@@ -585,6 +598,7 @@ export const VideoGallerySection: React.FC<VideoGallerySectionProps> = ({
                   src={activeVideo.videoFileUrl}
                   preload="metadata"
                   controls
+                  playsInline
                   className="w-full h-full object-contain bg-black"
                 />
               ) : (
@@ -794,8 +808,18 @@ export const VideoGallerySection: React.FC<VideoGallerySectionProps> = ({
                   </form>
                 )}
 
-                {activeVideo.youtubeUrl && (
-                  <div className="pt-1">
+                <div className="pt-1 flex flex-wrap items-center gap-3">
+                  {(activeEmbedUrl || activeVideo.videoFileUrl) && (
+                    <button
+                      type="button"
+                      onClick={() => setIsVideoFullscreen(true)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs cursor-pointer"
+                    >
+                      <Maximize2 className="w-3.5 h-3.5" />
+                      <span>Tonton Layar Penuh (HP)</span>
+                    </button>
+                  )}
+                  {activeVideo.youtubeUrl && (
                     <a
                       href={activeVideo.youtubeUrl}
                       target="_blank"
@@ -806,8 +830,8 @@ export const VideoGallerySection: React.FC<VideoGallerySectionProps> = ({
                       <span>Tonton Langsung di YouTube</span>
                       <ExternalLink className="w-3 h-3" />
                     </a>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -892,6 +916,52 @@ export const VideoGallerySection: React.FC<VideoGallerySectionProps> = ({
                 );
               })}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Fullscreen Video / Live Streaming Overlay for Mobile HP & Desktop */}
+      {isVideoFullscreen && activeVideo && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Layar Penuh ${activeVideo.judul}`}
+          className="fixed inset-0 z-50 w-screen h-[100dvh] bg-black flex flex-col overflow-hidden"
+        >
+          <div className="px-3 sm:px-4 py-2.5 bg-[#021b15] border-b border-emerald-800/80 flex items-center justify-between gap-2 shrink-0">
+            <div className="min-w-0">
+              <div className="text-xs font-bold text-white truncate">{activeVideo.judul}</div>
+              <div className="text-[11px] text-amber-300 truncate">
+                {activeVideo.kategori} · {activeVideo.satker}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsVideoFullscreen(false)}
+              className="px-3 py-1.5 rounded-md bg-rose-950 hover:bg-rose-900 border border-rose-500/50 text-rose-100 text-xs font-bold flex items-center gap-1 cursor-pointer shrink-0"
+            >
+              <Minimize2 className="w-3.5 h-3.5" />
+              <span>Tutup Layar Penuh</span>
+            </button>
+          </div>
+          <div className="flex-1 w-full bg-black flex items-center justify-center">
+            {activeEmbedUrl ? (
+              <iframe
+                title={`Layar Penuh ${activeVideo.judul}`}
+                src={`${activeEmbedUrl}?fs=1&playsinline=1&rel=0`}
+                className="w-full h-full border-0"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
+                allowFullScreen
+              />
+            ) : activeVideo.videoFileUrl ? (
+              <video
+                src={activeVideo.videoFileUrl}
+                controls
+                autoPlay
+                playsInline
+                className="w-full h-full object-contain bg-black"
+              />
+            ) : null}
           </div>
         </div>
       )}

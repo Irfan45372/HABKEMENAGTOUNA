@@ -18,6 +18,7 @@ import {
   ParticipantRegistration,
   SatkerBannerItem,
   ScheduleEvent,
+  TournamentDrawSession,
   VenueLocation,
   VideoItem,
 } from './types/hab';
@@ -113,6 +114,7 @@ function persistStateLocally(state: AppState): void {
       medalStandings: state.medalStandings,
       satkerList: state.satkerList,
       venues: state.venues,
+      tournamentDraws: state.tournamentDraws || [],
     };
     window.localStorage.setItem(CORE_META_STORAGE_KEY, JSON.stringify(coreMeta));
   } catch {
@@ -215,6 +217,12 @@ export default function App() {
             journals: Array.isArray(parsed.journals)
               ? parsed.journals
               : DEFAULT_APP_STATE.journals,
+            tournamentDraws:
+              preferMeta && Array.isArray(savedMeta?.tournamentDraws)
+                ? savedMeta.tournamentDraws
+                : Array.isArray(parsed.tournamentDraws)
+                ? parsed.tournamentDraws
+                : [],
             updatedAt: preferMeta ? savedMeta?.updatedAt || parsed.updatedAt : parsed.updatedAt,
           };
           return mergedState;
@@ -531,6 +539,9 @@ export default function App() {
                 baksosMetrics: Array.isArray(data.baksosMetrics)
                   ? (data.baksosMetrics as BaksosMetric[])
                   : [],
+                tournamentDraws: Array.isArray(data.tournamentDraws)
+                  ? (data.tournamentDraws as TournamentDrawSession[])
+                  : [],
                 updatedAt: incomingUpdatedAt || prev.updatedAt,
               };
             });
@@ -739,6 +750,59 @@ export default function App() {
       const next: AppState = {
         ...prev,
         competitions: prev.competitions.map((c) => (c.id === id ? { ...c, ...partial } : c)),
+        updatedAt: new Date().toISOString(),
+      };
+      persistStateLocally(next);
+      void savePortalConfigToCloud(next);
+      return next;
+    });
+  };
+
+  const handleAddTournamentDraw = (session: TournamentDrawSession) => {
+    setAppState((prev) => {
+      const currentDraws = prev.tournamentDraws ?? [];
+      const next: AppState = {
+        ...prev,
+        tournamentDraws: [session, ...currentDraws],
+        updatedAt: new Date().toISOString(),
+      };
+      persistStateLocally(next);
+      void savePortalConfigToCloud(next);
+      return next;
+    });
+  };
+
+  const handleDeleteTournamentDraw = (id: string) => {
+    setAppState((prev) => {
+      const currentDraws = prev.tournamentDraws ?? [];
+      const matchPrefix = `match-${id}-`;
+      const next: AppState = {
+        ...prev,
+        tournamentDraws: currentDraws.filter((d) => d.id !== id),
+        matches: prev.matches.filter((m) => !m.id.startsWith(matchPrefix)),
+        updatedAt: new Date().toISOString(),
+      };
+      persistStateLocally(next);
+      void savePortalConfigToCloud(next);
+      return next;
+    });
+  };
+
+  const handleSyncMatchesFromDraw = (matchesToAdd: MatchScore[], drawId: string) => {
+    setAppState((prev) => {
+      const existingIds = new Set(prev.matches.map((m) => m.id));
+      const uniqueNew = matchesToAdd.filter((m) => !existingIds.has(m.id));
+      const updatedExisting = prev.matches.map((m) => {
+        const replacement = matchesToAdd.find((x) => x.id === m.id);
+        return replacement || m;
+      });
+      const nextDraws = (prev.tournamentDraws ?? []).map((d) =>
+        d.id === drawId ? { ...d, syncedToScoreboard: true } : d
+      );
+      const next: AppState = {
+        ...prev,
+        matches: [...uniqueNew, ...updatedExisting],
+        tournamentDraws: nextDraws,
         updatedAt: new Date().toISOString(),
       };
       persistStateLocally(next);
@@ -1616,11 +1680,15 @@ export default function App() {
               forceMount={forcedSectionId === 'pendaftaran-lomba' || Boolean(preselectedCompId)}
             >
               <CompetitionSection
+                branding={appState.branding}
                 competitions={appState.competitions}
                 satkerList={appState.satkerList}
                 registrations={appState.registrations}
                 matches={appState.matches}
                 medalStandings={appState.medalStandings}
+                videos={appState.videos ?? []}
+                liveDrawYoutubeUrl={appState.branding.liveDrawYoutubeUrl || ''}
+                tournamentDraws={appState.tournamentDraws ?? []}
                 allowCustomProposal={appState.branding.allowCustomCompetitionProposal}
                 preselectedCompetitionId={preselectedCompId}
                 adminPin={appState.branding.adminPin}
@@ -1628,6 +1696,12 @@ export default function App() {
                 onUnlockAdmin={() => setIsAdminUnlocked(true)}
                 onUpdateCompetition={handleUpdateCompetition}
                 onAddRegistration={handleAddRegistration}
+                onUpdateLiveDrawYoutubeUrl={(url) =>
+                  handleUpdateBranding({ liveDrawYoutubeUrl: url })
+                }
+                onAddTournamentDraw={handleAddTournamentDraw}
+                onDeleteTournamentDraw={handleDeleteTournamentDraw}
+                onSyncMatchesFromDraw={handleSyncMatchesFromDraw}
               />
             </ViewportLazySection>
 

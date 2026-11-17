@@ -361,6 +361,7 @@ export async function savePortalConfigToCloud(state: AppState): Promise<boolean>
       medalStandings: state.medalStandings || [],
       schedules: state.schedules || [],
       baksosMetrics: state.baksosMetrics || [],
+      tournamentDraws: state.tournamentDraws || [],
       collectionsSeededV2: true,
       updatedAt,
     });

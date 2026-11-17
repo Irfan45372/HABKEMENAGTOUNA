@@ -1,10 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  BrandingConfig,
   Competition,
   MatchScore,
   MedalStanding,
   ParticipantFormat,
   ParticipantRegistration,
+  TournamentDrawSession,
+  VideoItem,
 } from '../types/hab';
 import {
   compressBannerImageFile,
@@ -21,6 +24,7 @@ import {
 import { buildDeepLink, shareToWhatsAppWithFullImage } from '../utils/shareUtils';
 import { InlinePdfCanvasViewer } from './InlinePdfCanvasViewer';
 import { InlineWordDocViewer } from './InlineWordDocViewer';
+import { LiveTournamentDrawPanel } from './LiveTournamentDrawPanel';
 import {
   Award,
   Check,
@@ -39,6 +43,7 @@ import {
   Plus,
   Search,
   Share2,
+  Shuffle,
   Sparkles,
   Trash2,
   Trophy,
@@ -50,11 +55,15 @@ import {
 } from 'lucide-react';
 
 interface CompetitionSectionProps {
+  branding?: BrandingConfig;
   competitions: Competition[];
   satkerList: string[];
   registrations: ParticipantRegistration[];
   matches: MatchScore[];
   medalStandings: MedalStanding[];
+  videos?: VideoItem[];
+  liveDrawYoutubeUrl?: string;
+  tournamentDraws?: TournamentDrawSession[];
   allowCustomProposal: boolean;
   preselectedCompetitionId?: string | null;
   adminPin?: string;
@@ -62,14 +71,22 @@ interface CompetitionSectionProps {
   onUnlockAdmin?: () => void;
   onUpdateCompetition?: (id: string, partial: Partial<Competition>) => void;
   onAddRegistration: (reg: ParticipantRegistration, newSatkerName?: string) => void;
+  onUpdateLiveDrawYoutubeUrl?: (url: string) => void;
+  onAddTournamentDraw?: (session: TournamentDrawSession) => void;
+  onDeleteTournamentDraw?: (id: string) => void;
+  onSyncMatchesFromDraw?: (matchesToAdd: MatchScore[], drawId: string) => void;
 }
 
 export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
+  branding,
   competitions,
   satkerList,
   registrations,
   matches,
   medalStandings,
+  videos = [],
+  liveDrawYoutubeUrl = '',
+  tournamentDraws = [],
   allowCustomProposal,
   preselectedCompetitionId,
   adminPin = '812027',
@@ -77,9 +94,13 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
   onUnlockAdmin,
   onUpdateCompetition,
   onAddRegistration,
+  onUpdateLiveDrawYoutubeUrl,
+  onAddTournamentDraw,
+  onDeleteTournamentDraw,
+  onSyncMatchesFromDraw,
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<
-    'form' | 'directory' | 'scoreboard' | 'medals' | 'bagan'
+    'form' | 'directory' | 'scoreboard' | 'medals' | 'bagan' | 'undian'
   >('form');
 
   // Strictly 2 main categories: 'Olahraga' and 'Lomba'
@@ -278,7 +299,12 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
       const lombaParam = params.get('lomba');
       const menuParam = params.get('menu');
       const baganParam = params.get('bagan');
-      if (lombaParam && competitions.length > 0) {
+      const undianParam = params.get('undian');
+      if (undianParam === '1') {
+        setActiveSubTab('undian');
+        const el = document.getElementById('pendaftaran-lomba');
+        if (el) el.scrollIntoView({ behavior: 'smooth' });
+      } else if (lombaParam && competitions.length > 0) {
         const found = competitions.find((c) => c.id === lombaParam);
         if (found) {
           setIsCustomProposal(false);
@@ -666,6 +692,20 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
           >
             <GitBranch className="w-3.5 h-3.5" />
             <span>Bagan Lomba / Pertandingan (PDF/Word/JPG)</span>
+          </button>
+          <button
+            role="tab"
+            aria-selected={activeSubTab === 'undian'}
+            type="button"
+            onClick={() => setActiveSubTab('undian')}
+            className={`px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
+              activeSubTab === 'undian'
+                ? 'bg-amber-400 text-slate-950 shadow-sm font-bold'
+                : 'text-amber-200 hover:text-white bg-emerald-950/80 border border-amber-400/30'
+            }`}
+          >
+            <Shuffle className="w-3.5 h-3.5" />
+            <span>Mesin Undian Live ({tournamentDraws.length})</span>
           </button>
         </div>
       </div>
@@ -2366,6 +2406,26 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* SUB-TAB 6: MESIN UNDIAN LIVE (FULL LOMBA & NOMOR URUT + YOUTUBE LIVE) */}
+      {activeSubTab === 'undian' && (
+        <LiveTournamentDrawPanel
+          branding={branding}
+          competitions={competitions}
+          satkerList={satkerList}
+          registrations={registrations}
+          videos={videos}
+          liveDrawYoutubeUrl={liveDrawYoutubeUrl}
+          tournamentDraws={tournamentDraws}
+          adminPin={adminPin}
+          isAdminUnlocked={isAdminUnlocked}
+          onUnlockAdmin={onUnlockAdmin}
+          onUpdateLiveDrawYoutubeUrl={(url) => onUpdateLiveDrawYoutubeUrl?.(url)}
+          onAddTournamentDraw={(sess) => onAddTournamentDraw?.(sess)}
+          onDeleteTournamentDraw={(id) => onDeleteTournamentDraw?.(id)}
+          onSyncMatchesFromDraw={(m, dId) => onSyncMatchesFromDraw?.(m, dId)}
+        />
       )}
 
       {/* Juknis Detail & Direct Admin Editor Modal */}

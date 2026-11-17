@@ -39,6 +39,7 @@ export const DEFAULT_APP_STATE: AppState = {
     isCouponRegistrationOpen: true,
     couponRegistrationClosedMessage:
       'Pendaftaran kupon undian Jalan Sehat Kerukunan saat ini sedang ditutup sementara oleh Panitia. Nantikan pembukaan sesi pendaftaran berikutnya atau hubungi Panitia HAB ke-81.',
+    liveDrawYoutubeUrl: '',
     adminPin: '812027',
     welcomeVoice: {
       enabled: true,
@@ -821,6 +822,6 @@ export const DEFAULT_APP_STATE: AppState = {
       disetujui: true,
     },
   ],
+  tournamentDraws: [],
 };
-
 
