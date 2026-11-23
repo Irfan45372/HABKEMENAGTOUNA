@@ -2,6 +2,7 @@ import {
   AppState,
   Competition,
   JalanSehatCoupon,
+  JournalArticle,
   MedalStanding,
   ParticipantFormat,
   ParticipantRegistration,
@@ -530,3 +531,91 @@ export function generateKnockoutDrawMatches(
   }
   return matches;
 }
+
+export type PlayerChangeRequestType = 'koreksi' | 'tambah' | 'ganti';
+
+/**
+ * Cleans and normalizes an editable player roster array (trims whitespace, removes empty slots).
+ */
+export function sanitizePlayerRoster(players: string[]): string[] {
+  return players.map((p) => p.trim()).filter((p) => p.length > 0);
+}
+
+/**
+ * Formats an official read-only report message so team officials can ask Admin to fix typos
+ * or add new players without giving public users direct edit access.
+ */
+export function buildPlayerChangeReportMessage(params: {
+  reg: ParticipantRegistration;
+  requestType: PlayerChangeRequestType;
+  detail: string;
+  pelaporNama: string;
+  pelaporWa?: string;
+}): string {
+  const typeLabel =
+    params.requestType === 'koreksi'
+      ? 'Perbaikan Salah Ketik Nama Pemain'
+      : params.requestType === 'tambah'
+      ? 'Penambahan Pemain Baru'
+      : 'Penggantian / Perubahan Daftar Pemain';
+
+  const currentRoster =
+    params.reg.daftarPemain.length > 0
+      ? params.reg.daftarPemain.map((p, idx) => `${idx + 1}. ${p}`).join('\n')
+      : '-';
+
+  const lines = [
+    '*PERMOHONAN PERUBAHAN DATA PEMAIN — HAB KE-81 KEMENAG TOJO UNA-UNA*',
+    `Jenis Pengajuan: ${typeLabel}`,
+    `Nama Tim / Peserta: ${params.reg.namaTimAtauPeserta}`,
+    `Kontingen / Satker: ${params.reg.satker}`,
+    `Cabang: ${params.reg.competitionName}`,
+    `Pelapor / Official: ${params.pelaporNama.trim() || params.reg.ketuaAtauOfficial || '-'}`,
+  ];
+
+  if (params.pelaporWa && params.pelaporWa.trim()) {
+    lines.push(`Kontak WA Pelapor: ${params.pelaporWa.trim()}`);
+  }
+
+  lines.push(
+    '',
+    '*Daftar Pemain Saat Ini di Web:*',
+    currentRoster,
+    '',
+    '*Rincian Perbaikan / Pemain yang Dimohonkan:*',
+    params.detail.trim() || '(Belum diisi)',
+    '',
+    '_Mohon bantuan Admin Panitia HAB ke-81 untuk memverifikasi dan memperbarui data pemain tersebut._'
+  );
+
+  return lines.join('\n');
+}
+
+/**
+ * Filters journal articles case-insensitively across title, lead paragraph,
+ * article body, author, Satker, and region/category label.
+ */
+export function filterJournalArticles(
+  journals: JournalArticle[],
+  query: string
+): JournalArticle[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return journals;
+  return journals.filter((item) => {
+    const haystack = [
+      item.judul,
+      item.leadParagraf,
+      item.isiBerita,
+      item.penulis,
+      item.satker,
+      item.kategoriLokasi,
+      item.tanggalWaktu,
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    return haystack.includes(q);
+  });
+}
+
+

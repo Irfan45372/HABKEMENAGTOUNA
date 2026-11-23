@@ -22,6 +22,7 @@ import {
   compressBannerImageFile,
   extractYoutubeEmbedUrl,
   normalizeBannerImageUrl,
+  sanitizePlayerRoster,
   validateImportedState,
 } from '../utils/habLogic';
 import {
@@ -160,6 +161,15 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
   const [editingSatkerIdx, setEditingSatkerIdx] = useState<number | null>(null);
   const [editingSatkerValue, setEditingSatkerValue] = useState<string>('');
   const [editingRegId, setEditingRegId] = useState<string | null>(null);
+  const [regEditDraft, setRegEditDraft] = useState<{
+    namaTimAtauPeserta: string;
+    satker: string;
+    ketuaAtauOfficial: string;
+    kontakWhatsapp: string;
+    catatanTambahan: string;
+    daftarPemain: string[];
+    newPlayerName: string;
+  } | null>(null);
   const [regPdfFilter, setRegPdfFilter] = useState<string>('ALL');
 
   // Tab 4: Video & YouTube State
@@ -2302,7 +2312,7 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                     </div>
                     <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
                       {appState.registrations.map((reg) => {
-                        const isEditing = editingRegId === reg.id;
+                        const isEditing = editingRegId === reg.id && regEditDraft !== null;
                         return (
                           <div
                             key={reg.id}
@@ -2315,31 +2325,98 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                                   <span className="text-amber-300">{reg.competitionName}</span>
                                 </div>
                                 <div className="text-slate-300">
-                                  {reg.satker} · WA: {reg.kontakWhatsapp} · Pemain:{' '}
-                                  {reg.daftarPemain.join(', ')}
+                                  {reg.satker} · WA: {reg.kontakWhatsapp} · Pemain (
+                                  {reg.daftarPemain.length}): {reg.daftarPemain.join(', ')}
                                 </div>
                               </div>
                               <div className="flex items-center gap-1.5 shrink-0">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    if (isEditing) {
-                                      setEditingRegId(null);
-                                      notify(
-                                        `✓ Perubahan data pendaftar "${reg.namaTimAtauPeserta}" berhasil disimpan!`
-                                      );
-                                    } else {
+                                {isEditing ? (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const combined = regEditDraft.newPlayerName.trim()
+                                          ? [
+                                              ...regEditDraft.daftarPemain,
+                                              regEditDraft.newPlayerName.trim(),
+                                            ]
+                                          : regEditDraft.daftarPemain;
+                                        const cleanPlayers = sanitizePlayerRoster(combined);
+                                        if (!regEditDraft.namaTimAtauPeserta.trim()) {
+                                          notify('Nama Tim / Peserta wajib diisi.');
+                                          return;
+                                        }
+                                        if (cleanPlayers.length === 0) {
+                                          notify('Minimal harus ada 1 nama pemain yang terisi.');
+                                          return;
+                                        }
+                                        onUpdateState((prev) => ({
+                                          ...prev,
+                                          registrations: prev.registrations.map((r) =>
+                                            r.id === reg.id
+                                              ? {
+                                                  ...r,
+                                                  namaTimAtauPeserta:
+                                                    regEditDraft.namaTimAtauPeserta.trim(),
+                                                  satker: regEditDraft.satker.trim() || r.satker,
+                                                  ketuaAtauOfficial:
+                                                    regEditDraft.ketuaAtauOfficial.trim() ||
+                                                    r.ketuaAtauOfficial,
+                                                  kontakWhatsapp:
+                                                    regEditDraft.kontakWhatsapp.trim() ||
+                                                    r.kontakWhatsapp,
+                                                  catatanTambahan:
+                                                    regEditDraft.catatanTambahan.trim() ||
+                                                    undefined,
+                                                  daftarPemain: cleanPlayers,
+                                                }
+                                              : r
+                                          ),
+                                        }));
+                                        setEditingRegId(null);
+                                        setRegEditDraft(null);
+                                        notify(
+                                          `✓ Perubahan data & daftar pemain "${regEditDraft.namaTimAtauPeserta.trim()}" (${cleanPlayers.length} orang) berhasil disimpan!`
+                                        );
+                                      }}
+                                      className="px-2.5 py-1 rounded border bg-amber-400 text-slate-950 border-amber-300 text-[11px] font-bold cursor-pointer"
+                                    >
+                                      ✓ Simpan Perubahan
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setEditingRegId(null);
+                                        setRegEditDraft(null);
+                                      }}
+                                      className="px-2 py-1 rounded border bg-[#021b15] border-emerald-700 text-slate-300 text-[11px] font-semibold cursor-pointer"
+                                    >
+                                      Batal
+                                    </button>
+                                  </>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
                                       setEditingRegId(reg.id);
-                                    }
-                                  }}
-                                  className={`px-2.5 py-1 rounded border text-[11px] font-bold cursor-pointer ${
-                                    isEditing
-                                      ? 'bg-amber-400 text-slate-950 border-amber-300'
-                                      : 'bg-[#021b15] border-emerald-700 text-amber-300'
-                                  }`}
-                                >
-                                  {isEditing ? '✓ Simpan Perubahan' : 'Edit'}
-                                </button>
+                                      setRegEditDraft({
+                                        namaTimAtauPeserta: reg.namaTimAtauPeserta,
+                                        satker: reg.satker,
+                                        ketuaAtauOfficial: reg.ketuaAtauOfficial || '',
+                                        kontakWhatsapp: reg.kontakWhatsapp || '',
+                                        catatanTambahan: reg.catatanTambahan || '',
+                                        daftarPemain:
+                                          reg.daftarPemain.length > 0
+                                            ? [...reg.daftarPemain]
+                                            : [''],
+                                        newPlayerName: '',
+                                      });
+                                    }}
+                                    className="px-2.5 py-1 rounded border bg-[#021b15] border-emerald-700 text-amber-300 text-[11px] font-bold cursor-pointer"
+                                  >
+                                    Edit Pemain
+                                  </button>
+                                )}
                                 <button
                                   type="button"
                                   onClick={() =>
@@ -2357,76 +2434,160 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                               </div>
                             </div>
 
-                            {isEditing && (
-                              <div className="pt-2 border-t border-emerald-800/70 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                <input
-                                  type="text"
-                                  value={reg.namaTimAtauPeserta}
-                                  onChange={(e) =>
-                                    onUpdateState((prev) => ({
-                                      ...prev,
-                                      registrations: prev.registrations.map((r) =>
-                                        r.id === reg.id
-                                          ? { ...r, namaTimAtauPeserta: e.target.value }
-                                          : r
-                                      ),
-                                    }))
-                                  }
-                                  placeholder="Nama Tim / Peserta"
-                                  className="px-2.5 py-1.5 rounded bg-[#021b15] border border-emerald-700 text-xs text-white"
-                                />
-                                <input
-                                  type="text"
-                                  value={reg.satker}
-                                  onChange={(e) =>
-                                    onUpdateState((prev) => ({
-                                      ...prev,
-                                      registrations: prev.registrations.map((r) =>
-                                        r.id === reg.id ? { ...r, satker: e.target.value } : r
-                                      ),
-                                    }))
-                                  }
-                                  placeholder="Asal Satker"
-                                  className="px-2.5 py-1.5 rounded bg-[#021b15] border border-emerald-700 text-xs text-white"
-                                />
-                                <input
-                                  type="text"
-                                  value={reg.kontakWhatsapp}
-                                  onChange={(e) =>
-                                    onUpdateState((prev) => ({
-                                      ...prev,
-                                      registrations: prev.registrations.map((r) =>
-                                        r.id === reg.id
-                                          ? { ...r, kontakWhatsapp: e.target.value }
-                                          : r
-                                      ),
-                                    }))
-                                  }
-                                  placeholder="No. WhatsApp"
-                                  className="px-2.5 py-1.5 rounded bg-[#021b15] border border-emerald-700 text-xs text-white"
-                                />
-                                <input
-                                  type="text"
-                                  value={reg.daftarPemain.join(', ')}
-                                  onChange={(e) =>
-                                    onUpdateState((prev) => ({
-                                      ...prev,
-                                      registrations: prev.registrations.map((r) =>
-                                        r.id === reg.id
-                                          ? {
-                                              ...r,
-                                              daftarPemain: e.target.value
-                                                .split(',')
-                                                .map((x) => x.trim())
-                                                .filter(Boolean),
+                            {isEditing && regEditDraft && (
+                              <div className="pt-2.5 border-t border-emerald-800/70 space-y-2.5">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                  <input
+                                    type="text"
+                                    value={regEditDraft.namaTimAtauPeserta}
+                                    onChange={(e) =>
+                                      setRegEditDraft((prev) =>
+                                        prev ? { ...prev, namaTimAtauPeserta: e.target.value } : prev
+                                      )
+                                    }
+                                    placeholder="Nama Tim / Peserta"
+                                    className="px-2.5 py-1.5 rounded bg-[#021b15] border border-emerald-700 text-xs text-white"
+                                  />
+                                  <input
+                                    type="text"
+                                    value={regEditDraft.satker}
+                                    onChange={(e) =>
+                                      setRegEditDraft((prev) =>
+                                        prev ? { ...prev, satker: e.target.value } : prev
+                                      )
+                                    }
+                                    placeholder="Asal Satker"
+                                    className="px-2.5 py-1.5 rounded bg-[#021b15] border border-emerald-700 text-xs text-white"
+                                  />
+                                  <input
+                                    type="text"
+                                    value={regEditDraft.ketuaAtauOfficial}
+                                    onChange={(e) =>
+                                      setRegEditDraft((prev) =>
+                                        prev ? { ...prev, ketuaAtauOfficial: e.target.value } : prev
+                                      )
+                                    }
+                                    placeholder="Official / Ketua Tim"
+                                    className="px-2.5 py-1.5 rounded bg-[#021b15] border border-emerald-700 text-xs text-white"
+                                  />
+                                  <input
+                                    type="text"
+                                    value={regEditDraft.kontakWhatsapp}
+                                    onChange={(e) =>
+                                      setRegEditDraft((prev) =>
+                                        prev ? { ...prev, kontakWhatsapp: e.target.value } : prev
+                                      )
+                                    }
+                                    placeholder="No. WhatsApp"
+                                    className="px-2.5 py-1.5 rounded bg-[#021b15] border border-emerald-700 text-xs text-white"
+                                  />
+                                </div>
+
+                                <div className="space-y-1.5 bg-[#021b15] p-2.5 rounded-lg border border-emerald-800/70">
+                                  <div className="text-[11px] font-bold text-amber-300">
+                                    Daftar Atlet / Pemain ({sanitizePlayerRoster(regEditDraft.daftarPemain).length} orang) — Edit Salah Ketik / Tambah Pemain:
+                                  </div>
+                                  <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                                    {regEditDraft.daftarPemain.map((playerName, idx) => (
+                                      <div key={idx} className="flex items-center gap-1.5">
+                                        <span className="w-6 text-[11px] font-mono-tabular text-amber-300 font-bold text-right shrink-0">
+                                          {idx + 1}.
+                                        </span>
+                                        <input
+                                          type="text"
+                                          value={playerName}
+                                          onChange={(e) => {
+                                            const val = e.target.value;
+                                            setRegEditDraft((prev) =>
+                                              prev
+                                                ? {
+                                                    ...prev,
+                                                    daftarPemain: prev.daftarPemain.map((p, i) =>
+                                                      i === idx ? val : p
+                                                    ),
+                                                  }
+                                                : prev
+                                            );
+                                          }}
+                                          placeholder={`Nama Pemain #${idx + 1}`}
+                                          className="flex-1 px-2.5 py-1 rounded bg-[#03251c] border border-emerald-700 text-xs text-white"
+                                        />
+                                        {regEditDraft.daftarPemain.length > 1 && (
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              setRegEditDraft((prev) =>
+                                                prev
+                                                  ? {
+                                                      ...prev,
+                                                      daftarPemain: prev.daftarPemain.filter(
+                                                        (_, i) => i !== idx
+                                                      ),
+                                                    }
+                                                  : prev
+                                              )
                                             }
-                                          : r
-                                      ),
-                                    }))
-                                  }
-                                  placeholder="Daftar Pemain (pisahkan koma)"
-                                  className="px-2.5 py-1.5 rounded bg-[#021b15] border border-emerald-700 text-xs text-white"
-                                />
+                                            title="Hapus pemain ini"
+                                            className="p-1 rounded bg-rose-950 text-rose-300 cursor-pointer shrink-0"
+                                          >
+                                            <X className="w-3.5 h-3.5" />
+                                          </button>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+
+                                  <div className="flex items-center gap-1.5 pt-1">
+                                    <input
+                                      type="text"
+                                      value={regEditDraft.newPlayerName}
+                                      onChange={(e) =>
+                                        setRegEditDraft((prev) =>
+                                          prev ? { ...prev, newPlayerName: e.target.value } : prev
+                                        )
+                                      }
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                          e.preventDefault();
+                                          const clean = regEditDraft.newPlayerName.trim();
+                                          setRegEditDraft((prev) =>
+                                            prev
+                                              ? {
+                                                  ...prev,
+                                                  daftarPemain: [
+                                                    ...prev.daftarPemain,
+                                                    clean || '',
+                                                  ],
+                                                  newPlayerName: '',
+                                                }
+                                              : prev
+                                          );
+                                        }
+                                      }}
+                                      placeholder="Ketik nama pemain baru..."
+                                      className="flex-1 px-2.5 py-1 rounded bg-[#03251c] border border-amber-400/50 text-xs text-white"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const clean = regEditDraft.newPlayerName.trim();
+                                        setRegEditDraft((prev) =>
+                                          prev
+                                            ? {
+                                                ...prev,
+                                                daftarPemain: [...prev.daftarPemain, clean || ''],
+                                                newPlayerName: '',
+                                              }
+                                            : prev
+                                        );
+                                      }}
+                                      className="px-2.5 py-1 rounded bg-emerald-800 hover:bg-emerald-700 text-amber-200 font-bold text-[11px] flex items-center gap-1 cursor-pointer shrink-0"
+                                    >
+                                      <Plus className="w-3 h-3" />
+                                      <span>Tambah Pemain</span>
+                                    </button>
+                                  </div>
+                                </div>
                               </div>
                             )}
                           </div>

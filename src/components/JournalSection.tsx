@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { JournalArticle } from '../types/hab';
 import {
   compressBannerImageFile,
+  filterJournalArticles,
   normalizeBannerImageUrl,
 } from '../utils/habLogic';
 import {
@@ -17,6 +18,7 @@ import {
   Image as ImageIcon,
   Lock,
   Plus,
+  Search,
   Share2,
   Trash2,
   Unlock,
@@ -137,7 +139,10 @@ export const JournalSection: React.FC<JournalSectionProps> = ({
   onUpdateJournal,
   onDeleteJournal,
 }) => {
-  const approvedJournals = journals.filter((j) => j.disetujui !== false);
+  const approvedJournals = useMemo(
+    () => journals.filter((j) => j.disetujui !== false),
+    [journals]
+  );
   const activeArticle =
     approvedJournals.find((j) => j.id === selectedJournalId) ||
     approvedJournals[0] ||
@@ -146,8 +151,14 @@ export const JournalSection: React.FC<JournalSectionProps> = ({
   const [viewMode, setViewMode] = useState<'reader' | 'list'>(
     selectedJournalId ? 'reader' : 'reader'
   );
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const [showWriteModal, setShowWriteModal] = useState<boolean>(false);
   const [editingArticleId, setEditingArticleId] = useState<string | null>(null);
+
+  const filteredJournals = useMemo(
+    () => filterJournalArticles(approvedJournals, searchQuery),
+    [approvedJournals, searchQuery]
+  );
 
   // Form states for creating/editing a Journal Article with up to 4 photos
   const [judul, setJudul] = useState('');
@@ -479,7 +490,48 @@ export const JournalSection: React.FC<JournalSectionProps> = ({
       )}
 
       {/* MAIN CONTENT AREA: DISTRACTION-FREE JOURNAL READER OR ARTICLE INDEX */}
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 pt-8">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 pt-6 space-y-6">
+        {/* Global Journal Search Bar (Accessible in both Reader & List views) */}
+        <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              aria-label="Cari artikel berita berdasarkan kata kunci atau judul"
+              value={searchQuery}
+              onChange={(e) => {
+                const nextVal = e.target.value;
+                setSearchQuery(nextVal);
+                if (nextVal.trim() && viewMode !== 'list') {
+                  setViewMode('list');
+                }
+              }}
+              placeholder="Cari judul berita, kata kunci, penulis, atau Satker..."
+              className="w-full pl-10 pr-9 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-emerald-600 focus:bg-white transition-colors"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                aria-label="Hapus kata kunci pencarian"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-200/70 cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center justify-between sm:justify-end gap-2 shrink-0 text-xs text-slate-500">
+            {searchQuery.trim() ? (
+              <span className="font-semibold text-emerald-800">
+                Ditemukan {filteredJournals.length} dari {approvedJournals.length} berita
+              </span>
+            ) : (
+              <span>{approvedJournals.length} Artikel Terbit</span>
+            )}
+          </div>
+        </div>
+
         {viewMode === 'list' ? (
           <div className="space-y-6">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-4">
@@ -501,8 +553,30 @@ export const JournalSection: React.FC<JournalSectionProps> = ({
               </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {approvedJournals.map((item) => (
+            {filteredJournals.length === 0 ? (
+              <div className="bg-white rounded-2xl border border-slate-200 p-10 text-center space-y-3">
+                <Search className="w-9 h-9 text-slate-300 mx-auto" />
+                <h2 className="text-base font-bold text-slate-900">
+                  Artikel Berita Tidak Ditemukan
+                </h2>
+                <p className="text-xs text-slate-600 max-w-md mx-auto">
+                  {searchQuery.trim()
+                    ? `Tidak ada jurnal atau berita yang cocok dengan kata kunci "${searchQuery.trim()}". Coba gunakan kata kunci lain.`
+                    : 'Belum ada artikel jurnal yang diterbitkan.'}
+                </p>
+                {searchQuery.trim() && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="px-4 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs cursor-pointer"
+                  >
+                    Tampilkan Semua Berita
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {filteredJournals.map((item) => (
                 <article
                   key={item.id}
                   className="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow overflow-hidden flex flex-col justify-between"
@@ -595,7 +669,8 @@ export const JournalSection: React.FC<JournalSectionProps> = ({
                   </div>
                 </article>
               ))}
-            </div>
+              </div>
+            )}
           </div>
         ) : activeArticle ? (
           /* ===================================================================

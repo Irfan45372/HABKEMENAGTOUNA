@@ -745,6 +745,26 @@ export default function App() {
     });
   };
 
+  const handleUpdateRegistration = (id: string, partial: Partial<ParticipantRegistration>) => {
+    setAppState((prev) => {
+      let updatedReg: ParticipantRegistration | null = null;
+      const nextRegistrations = prev.registrations.map((r) => {
+        if (r.id !== id) return r;
+        updatedReg = { ...r, ...partial };
+        return updatedReg;
+      });
+      if (!updatedReg) return prev;
+      const next: AppState = {
+        ...prev,
+        registrations: nextRegistrations,
+        updatedAt: new Date().toISOString(),
+      };
+      persistStateLocally(next);
+      void saveRegistrationToCloud(updatedReg);
+      return next;
+    });
+  };
+
   const handleUpdateCompetition = (id: string, partial: Partial<Competition>) => {
     setAppState((prev) => {
       const next: AppState = {
@@ -1696,6 +1716,7 @@ export default function App() {
                 onUnlockAdmin={() => setIsAdminUnlocked(true)}
                 onUpdateCompetition={handleUpdateCompetition}
                 onAddRegistration={handleAddRegistration}
+                onUpdateRegistration={handleUpdateRegistration}
                 onUpdateLiveDrawYoutubeUrl={(url) =>
                   handleUpdateBranding({ liveDrawYoutubeUrl: url })
                 }

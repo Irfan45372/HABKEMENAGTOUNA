@@ -10,10 +10,13 @@ import {
   VideoItem,
 } from '../types/hab';
 import {
+  buildPlayerChangeReportMessage,
   compressBannerImageFile,
   createRegistrationRecord,
   getRequiredPlayerSlots,
   normalizeCompetitionCategory,
+  PlayerChangeRequestType,
+  sanitizePlayerRoster,
   sortMedalStandings,
   validateRegistrationInput,
 } from '../utils/habLogic';
@@ -39,17 +42,21 @@ import {
   Image as ImageIcon,
   Lock,
   Maximize2,
+  MessageSquare,
   Minimize2,
   Plus,
   Search,
   Share2,
+  ShieldCheck,
   Shuffle,
   Sparkles,
   Trash2,
   Trophy,
+  Unlock,
   Upload,
   UserPlus,
   Users,
+  X,
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
@@ -71,6 +78,7 @@ interface CompetitionSectionProps {
   onUnlockAdmin?: () => void;
   onUpdateCompetition?: (id: string, partial: Partial<Competition>) => void;
   onAddRegistration: (reg: ParticipantRegistration, newSatkerName?: string) => void;
+  onUpdateRegistration?: (id: string, partial: Partial<ParticipantRegistration>) => void;
   onUpdateLiveDrawYoutubeUrl?: (url: string) => void;
   onAddTournamentDraw?: (session: TournamentDrawSession) => void;
   onDeleteTournamentDraw?: (id: string) => void;
@@ -94,6 +102,7 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
   onUnlockAdmin,
   onUpdateCompetition,
   onAddRegistration,
+  onUpdateRegistration,
   onUpdateLiveDrawYoutubeUrl,
   onAddTournamentDraw,
   onDeleteTournamentDraw,
@@ -143,11 +152,33 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
   const [editJuknisPic, setEditJuknisPic] = useState<string>('');
   const [juknisBannerMsg, setJuknisBannerMsg] = useState<string | null>(null);
 
-  // Directory filters
+  // Directory filters & Admin-only player roster edit state
   const [dirCategoryFilter, setDirCategoryFilter] = useState<'ALL' | 'Olahraga' | 'Lomba'>('ALL');
   const [dirCompFilter, setDirCompFilter] = useState<string>('ALL');
   const [dirSearch, setDirSearch] = useState<string>('');
   const [copiedCompId, setCopiedCompId] = useState<string | null>(null);
+  const [showDirPinPrompt, setShowDirPinPrompt] = useState<boolean>(false);
+  const [dirPinInput, setDirPinInput] = useState<string>('');
+  const [dirPinError, setDirPinError] = useState<string | null>(null);
+  const [dirNotice, setDirNotice] = useState<string | null>(null);
+
+  // Admin inline player editor state (strictly usable only when isAdminUnlocked === true)
+  const [editingDirRegId, setEditingDirRegId] = useState<string | null>(null);
+  const [editRegTim, setEditRegTim] = useState<string>('');
+  const [editRegOfficial, setEditRegOfficial] = useState<string>('');
+  const [editRegWa, setEditRegWa] = useState<string>('');
+  const [editRegCatatan, setEditRegCatatan] = useState<string>('');
+  const [editRegPlayers, setEditRegPlayers] = useState<string[]>([]);
+  const [newPlayerDraft, setNewPlayerDraft] = useState<string>('');
+  const [editRegError, setEditRegError] = useState<string | null>(null);
+
+  // Read-only user report modal state (allows teams to report typos / new players to Admin without editing DB)
+  const [reportReg, setReportReg] = useState<ParticipantRegistration | null>(null);
+  const [reportType, setReportType] = useState<PlayerChangeRequestType>('koreksi');
+  const [reportPelaporNama, setReportPelaporNama] = useState<string>('');
+  const [reportPelaporWa, setReportPelaporWa] = useState<string>('');
+  const [reportDetail, setReportDetail] = useState<string>('');
+  const [reportCopied, setReportCopied] = useState<boolean>(false);
 
   // Bagan Pertandingan & Lomba (PDF / Word / JPG) state
   const [baganCategoryFilter, setBaganCategoryFilter] = useState<'Semua' | 'Olahraga' | 'Lomba'>('Semua');
@@ -591,6 +622,373 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
     () => sortMedalStandings(medalStandings),
     [medalStandings]
   );
+
+  // Admin-only Directory PIN verification & Player Roster Edit Handlers
+  const handleVerifyDirAdminPin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (dirPinInput.trim() === (adminPin || '812027')) {
+      setDirPinError(null);
+      setDirPinInput('');
+      setShowDirPinPrompt(false);
+      onUnlockAdmin?.();
+    } else {
+      setDirPinError('PIN Admin tidak sesuai.');
+    }
+  };
+
+  const handleStartEditDirRegistration = (reg: ParticipantRegistration) => {
+    if (!isAdminUnlocked) {
+      setShowDirPinPrompt(true);
+      return;
+    }
+    setEditingDirRegId(reg.id);
+    setEditRegTim(reg.namaTimAtauPeserta);
+    setEditRegOfficial(reg.ketuaAtauOfficial || '');
+    setEditRegWa(reg.kontakWhatsapp || '');
+    setEditRegCatatan(reg.catatanTambahan || '');
+    setEditRegPlayers(reg.daftarPemain.length > 0 ? [...reg.daftarPemain] : ['']);
+    setNewPlayerDraft('');
+    setEditRegError(null);
+  };
+
+  const handleCancelEditDirRegistration = () => {
+    setEditingDirRegId(null);
+    setEditRegError(null);
+    setNewPlayerDraft('');
+  };
+
+  const handleAppendNewPlayerDraft = () => {
+    const clean = newPlayerDraft.trim();
+    if (!clean) {
+      setEditRegPlayers((prev) => [...prev, '']);
+      return;
+    }
+    setEditRegPlayers((prev) => [...prev, clean]);
+    setNewPlayerDraft('');
+  };
+
+  const handleSaveDirRegistration = (reg: ParticipantRegistration) => {
+    if (!isAdminUnlocked || !onUpdateRegistration) {
+      setShowDirPinPrompt(true);
+      return;
+    }
+    const cleanTim = editRegTim.trim();
+    const combinedPlayers = newPlayerDraft.trim()
+      ? [...editRegPlayers, newPlayerDraft.trim()]
+      : editRegPlayers;
+    const cleanPlayers = sanitizePlayerRoster(combinedPlayers);
+
+    if (cleanTim.length < 2) {
+      setEditRegError('Nama Tim / Peserta minimal 2 karakter.');
+      return;
+    }
+    if (cleanPlayers.length === 0) {
+      setEditRegError('Minimal harus ada 1 nama atlet / pemain yang terisi.');
+      return;
+    }
+
+    onUpdateRegistration(reg.id, {
+      namaTimAtauPeserta: cleanTim,
+      ketuaAtauOfficial: editRegOfficial.trim() || reg.ketuaAtauOfficial,
+      kontakWhatsapp: editRegWa.trim() || reg.kontakWhatsapp,
+      catatanTambahan: editRegCatatan.trim() || undefined,
+      daftarPemain: cleanPlayers,
+    });
+
+    setEditingDirRegId(null);
+    setEditRegError(null);
+    setNewPlayerDraft('');
+    setDirNotice(
+      `✓ Perubahan daftar pemain tim "${cleanTim}" (${cleanPlayers.length} orang) berhasil disimpan ke Cloud!`
+    );
+    window.setTimeout(() => setDirNotice(null), 5000);
+  };
+
+  const handleOpenReportPlayerModal = (reg: ParticipantRegistration) => {
+    setReportReg(reg);
+    setReportType('koreksi');
+    setReportPelaporNama(reg.ketuaAtauOfficial || '');
+    setReportPelaporWa(reg.kontakWhatsapp || '');
+    setReportDetail('');
+    setReportCopied(false);
+  };
+
+  const formattedReportText = useMemo(() => {
+    if (!reportReg) return '';
+    return buildPlayerChangeReportMessage({
+      reg: reportReg,
+      requestType: reportType,
+      detail: reportDetail,
+      pelaporNama: reportPelaporNama,
+      pelaporWa: reportPelaporWa,
+    });
+  }, [reportReg, reportType, reportDetail, reportPelaporNama, reportPelaporWa]);
+
+  const handleCopyReportText = async () => {
+    if (!formattedReportText) return;
+    try {
+      await navigator.clipboard.writeText(formattedReportText);
+      setReportCopied(true);
+      window.setTimeout(() => setReportCopied(false), 3000);
+    } catch {
+      setReportCopied(true);
+    }
+  };
+
+  const renderRegistrationCard = (
+    reg: ParticipantRegistration,
+    categoryVariant: 'Olahraga' | 'Lomba'
+  ) => {
+    const isOlahraga = categoryVariant === 'Olahraga';
+    const isEditingThis = isAdminUnlocked && editingDirRegId === reg.id;
+
+    if (isEditingThis) {
+      return (
+        <div
+          key={reg.id}
+          className="bg-[#021b15] border-2 border-amber-400 rounded-xl p-4 space-y-3 shadow-lg"
+        >
+          <div className="flex items-center justify-between gap-2 border-b border-emerald-800/80 pb-2">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-amber-300">
+              <Edit3 className="w-3.5 h-3.5" />
+              <span>Edit Data &amp; Daftar Pemain (Khusus Admin)</span>
+            </div>
+            <span className="text-[11px] text-slate-400 truncate max-w-[180px]">
+              {reg.competitionName}
+            </span>
+          </div>
+
+          {editRegError && (
+            <div
+              role="alert"
+              className="p-2.5 rounded-lg bg-rose-950/90 border border-rose-500/50 text-xs text-rose-200"
+            >
+              {editRegError}
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+            <div>
+              <label className="block text-[11px] text-slate-300 mb-1 font-semibold">
+                Nama Tim / Peserta *
+              </label>
+              <input
+                type="text"
+                value={editRegTim}
+                onChange={(e) => setEditRegTim(e.target.value)}
+                className="w-full px-2.5 py-1.5 rounded-lg bg-[#03251c] border border-emerald-700 text-xs text-white"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] text-slate-300 mb-1 font-semibold">
+                Official / Ketua Tim
+              </label>
+              <input
+                type="text"
+                value={editRegOfficial}
+                onChange={(e) => setEditRegOfficial(e.target.value)}
+                className="w-full px-2.5 py-1.5 rounded-lg bg-[#03251c] border border-emerald-700 text-xs text-white"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] text-slate-300 mb-1 font-semibold">
+                No. WhatsApp Official
+              </label>
+              <input
+                type="text"
+                value={editRegWa}
+                onChange={(e) => setEditRegWa(e.target.value)}
+                className="w-full px-2.5 py-1.5 rounded-lg bg-[#03251c] border border-emerald-700 text-xs text-white font-mono-tabular"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] text-slate-300 mb-1 font-semibold">
+                Catatan Tambahan
+              </label>
+              <input
+                type="text"
+                value={editRegCatatan}
+                onChange={(e) => setEditRegCatatan(e.target.value)}
+                placeholder="Opsional..."
+                className="w-full px-2.5 py-1.5 rounded-lg bg-[#03251c] border border-emerald-700 text-xs text-white"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2 pt-2 border-t border-emerald-800/70">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold text-amber-300">
+                {isOlahraga ? 'Daftar Atlet / Pemain' : 'Daftar Peserta / Anggota'} (
+                {sanitizePlayerRoster(editRegPlayers).length} orang):
+              </span>
+              <span className="text-[10px] text-slate-400">
+                Ubah langsung ejaan nama yang salah ketik
+              </span>
+            </div>
+
+            <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+              {editRegPlayers.map((playerName, idx) => (
+                <div key={idx} className="flex items-center gap-1.5">
+                  <span className="w-6 text-[11px] font-mono-tabular text-amber-300 font-bold shrink-0 text-right">
+                    {idx + 1}.
+                  </span>
+                  <input
+                    type="text"
+                    aria-label={`Nama Pemain ${idx + 1}`}
+                    value={playerName}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setEditRegPlayers((prev) => prev.map((p, i) => (i === idx ? val : p)));
+                    }}
+                    placeholder={`Nama Pemain #${idx + 1}`}
+                    className="flex-1 px-2.5 py-1.5 rounded-lg bg-[#03251c] border border-emerald-700 text-xs text-white focus:outline-none focus:border-amber-400"
+                  />
+                  {editRegPlayers.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setEditRegPlayers((prev) => prev.filter((_, i) => i !== idx))
+                      }
+                      title="Hapus baris pemain ini"
+                      className="p-1.5 rounded-lg bg-rose-950/90 hover:bg-rose-900 text-rose-200 cursor-pointer shrink-0"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Add New Player Row */}
+            <div className="flex items-center gap-1.5 pt-1">
+              <input
+                type="text"
+                value={newPlayerDraft}
+                onChange={(e) => setNewPlayerDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleAppendNewPlayerDraft();
+                  }
+                }}
+                placeholder="Ketik nama pemain baru untuk ditambahkan..."
+                className="flex-1 px-2.5 py-1.5 rounded-lg bg-[#03251c] border border-amber-400/50 text-xs text-white focus:outline-none focus:border-amber-400"
+              />
+              <button
+                type="button"
+                onClick={handleAppendNewPlayerDraft}
+                className="px-3 py-1.5 rounded-lg bg-emerald-800 hover:bg-emerald-700 border border-emerald-600 text-amber-200 font-bold text-xs flex items-center gap-1 cursor-pointer shrink-0 whitespace-nowrap"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Tambah Pemain</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-emerald-800/70">
+            <button
+              type="button"
+              onClick={handleCancelEditDirRegistration}
+              className="px-3 py-1.5 rounded-lg bg-emerald-950 hover:bg-emerald-900 border border-emerald-800 text-slate-300 text-xs font-semibold cursor-pointer"
+            >
+              Batal
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSaveDirRegistration(reg)}
+              className="px-4 py-1.5 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-sm"
+            >
+              <Check className="w-3.5 h-3.5" />
+              <span>Simpan Perubahan</span>
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div
+        key={reg.id}
+        className="bg-[#021b15] border border-emerald-800/70 rounded-xl p-4 flex flex-col justify-between space-y-3"
+      >
+        <div>
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <div className="flex items-center gap-1.5">
+                <span
+                  className={`px-2 py-0.5 rounded border text-[10px] font-bold ${
+                    isOlahraga
+                      ? 'bg-amber-400/20 border-amber-400/40 text-amber-300'
+                      : 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
+                  }`}
+                >
+                  {isOlahraga ? 'Kategori Olahraga' : 'Kategori Lomba'}
+                </span>
+                <span className="text-xs text-amber-200 font-semibold">
+                  {reg.competitionName}
+                </span>
+              </div>
+              <h4 className="text-base font-bold text-white mt-1">
+                {reg.namaTimAtauPeserta}
+              </h4>
+            </div>
+            <span className="text-xs text-emerald-300 font-mono-tabular shrink-0">
+              {reg.statusVerifikasi}
+            </span>
+          </div>
+
+          <div className="text-xs text-slate-300 mt-1">
+            Kontingen: <strong className="text-white">{reg.satker}</strong> · Format:{' '}
+            {reg.jenisPeserta} · Official: {reg.ketuaAtauOfficial}
+          </div>
+
+          <div className="mt-3 pt-2.5 border-t border-emerald-900/80">
+            <div className="text-[11px] text-slate-400 mb-1">
+              {isOlahraga ? 'Daftar Atlet / Pemain' : 'Daftar Peserta / Anggota'} (
+              {reg.daftarPemain.length} orang):
+            </div>
+            <p className="text-xs text-emerald-200 leading-relaxed">
+              {reg.daftarPemain.join(' · ')}
+            </p>
+          </div>
+        </div>
+
+        <div className="space-y-2 pt-2 border-t border-emerald-900/50">
+          <div className="text-[11px] text-slate-400 flex items-center justify-between gap-2">
+            <span>Terdaftar: {reg.waktuDaftar}</span>
+            {reg.catatanTambahan && (
+              <span className="text-amber-200/80 truncate max-w-[240px]">
+                {reg.catatanTambahan}
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center justify-end gap-2">
+            {isAdminUnlocked ? (
+              <button
+                type="button"
+                onClick={() => handleStartEditDirRegistration(reg)}
+                className="px-3 py-1.5 rounded-lg bg-amber-400/15 hover:bg-amber-400/25 border border-amber-400/50 text-amber-300 font-bold text-[11px] flex items-center gap-1.5 cursor-pointer"
+              >
+                <Edit3 className="w-3 h-3" />
+                <span>Edit / Tambah Pemain (Admin)</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => handleOpenReportPlayerModal(reg)}
+                className="px-2.5 py-1 rounded-lg bg-[#03251c] hover:bg-emerald-900/80 border border-emerald-800 text-slate-300 hover:text-amber-200 font-medium text-[11px] flex items-center gap-1.5 cursor-pointer transition-colors"
+                title="Laporkan salah ketik nama atau pengajuan tambah pemain ke Admin Panitia"
+              >
+                <MessageSquare className="w-3 h-3 text-amber-300" />
+                <span>Laporkan Koreksi / Tambah Pemain ke Admin</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <section
@@ -1396,6 +1794,84 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
                 )}
               </div>
             </div>
+
+            {/* Security Notice & Admin-Only Edit Unlock Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-2.5 pt-2.5 border-t border-emerald-800/50 text-xs">
+              <div className="flex items-center gap-2 text-slate-300">
+                <ShieldCheck className="w-4 h-4 text-amber-400 shrink-0" />
+                <span>
+                  {isAdminUnlocked
+                    ? 'Mode Edit Admin Aktif — Klik "Edit / Tambah Pemain (Admin)" pada kartu tim untuk memperbaiki ejaan atau menambah pemain.'
+                    : 'Demi keamanan data tim, perubahan atau penambahan nama pemain hanya dapat dilakukan oleh Admin Panitia. Gunakan tombol "Laporkan ke Admin" pada kartu tim Anda.'}
+                </span>
+              </div>
+
+              {isAdminUnlocked ? (
+                <span className="px-3 py-1 rounded-lg bg-emerald-900/90 border border-amber-400/50 text-amber-300 text-[11px] font-bold flex items-center gap-1.5 shrink-0">
+                  <Unlock className="w-3 h-3" />
+                  <span>Edit Pemain (Admin Aktif)</span>
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setShowDirPinPrompt((prev) => !prev)}
+                  className="px-3 py-1.5 rounded-lg bg-[#021b15] hover:bg-emerald-900 border border-emerald-700 text-amber-300 font-semibold text-[11px] flex items-center gap-1.5 cursor-pointer shrink-0"
+                >
+                  <Lock className="w-3 h-3" />
+                  <span>Edit Pemain (Khusus Admin)</span>
+                </button>
+              )}
+            </div>
+
+            {showDirPinPrompt && !isAdminUnlocked && (
+              <form
+                onSubmit={handleVerifyDirAdminPin}
+                className="bg-[#021b15] border-2 border-amber-400/70 rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-3"
+              >
+                <div className="flex items-center gap-2 text-xs text-slate-200">
+                  <Lock className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span>
+                    Masukkan <strong>PIN Admin</strong> untuk mengaktifkan fitur koreksi &amp; tambah nama pemain:
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {dirPinError && <span className="text-xs text-rose-300">{dirPinError}</span>}
+                  <input
+                    type="password"
+                    value={dirPinInput}
+                    onChange={(e) => setDirPinInput(e.target.value)}
+                    placeholder="PIN Admin"
+                    className="px-3 py-1.5 rounded-lg bg-[#03251c] border border-emerald-700 text-xs text-white font-mono-tabular w-36"
+                  />
+                  <button
+                    type="submit"
+                    className="px-3.5 py-1.5 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs cursor-pointer"
+                  >
+                    Buka Akses Admin
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowDirPinPrompt(false);
+                      setDirPinError(null);
+                    }}
+                    className="px-2.5 py-1.5 rounded-lg bg-emerald-950 text-slate-300 text-xs cursor-pointer"
+                  >
+                    Batal
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {dirNotice && (
+              <div
+                role="status"
+                className="p-3 rounded-xl bg-emerald-900/90 border border-emerald-400/60 text-xs text-emerald-100 flex items-center gap-2 font-semibold"
+              >
+                <CheckCircle2 className="w-4 h-4 text-amber-300 shrink-0" />
+                <span>{dirNotice}</span>
+              </div>
+            )}
           </div>
 
           {filteredRegistrations.length === 0 ? (
@@ -1459,56 +1935,9 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {olahragaRegistrations.map((reg) => (
-                        <div
-                          key={reg.id}
-                          className="bg-[#021b15] border border-emerald-800/70 rounded-xl p-4 flex flex-col justify-between space-y-3"
-                        >
-                          <div>
-                            <div className="flex items-start justify-between gap-2">
-                              <div>
-                                <div className="flex items-center gap-1.5">
-                                  <span className="px-2 py-0.5 rounded bg-amber-400/20 border border-amber-400/40 text-[10px] font-bold text-amber-300">
-                                    Kategori Olahraga
-                                  </span>
-                                  <span className="text-xs text-amber-200 font-semibold">
-                                    {reg.competitionName}
-                                  </span>
-                                </div>
-                                <h4 className="text-base font-bold text-white mt-1">
-                                  {reg.namaTimAtauPeserta}
-                                </h4>
-                              </div>
-                              <span className="text-xs text-emerald-300 font-mono-tabular shrink-0">
-                                {reg.statusVerifikasi}
-                              </span>
-                            </div>
-
-                            <div className="text-xs text-slate-300 mt-1">
-                              Kontingen: <strong className="text-white">{reg.satker}</strong> · Format:{' '}
-                              {reg.jenisPeserta} · Official: {reg.ketuaAtauOfficial}
-                            </div>
-
-                            <div className="mt-3 pt-2.5 border-t border-emerald-900/80">
-                              <div className="text-[11px] text-slate-400 mb-1">
-                                Daftar Atlet / Pemain ({reg.daftarPemain.length} orang):
-                              </div>
-                              <p className="text-xs text-emerald-200 leading-relaxed">
-                                {reg.daftarPemain.join(' · ')}
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="text-[11px] text-slate-400 flex items-center justify-between pt-2 border-t border-emerald-900/50">
-                            <span>Terdaftar: {reg.waktuDaftar}</span>
-                            {reg.catatanTambahan && (
-                              <span className="text-amber-200/80 truncate max-w-[240px]">
-                                {reg.catatanTambahan}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      ))}
+                      {olahragaRegistrations.map((reg) =>
+                        renderRegistrationCard(reg, 'Olahraga')
+                      )}
                     </div>
                   )}
                 </div>
@@ -1569,56 +1998,7 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {lombaRegistrations.map((reg) => (
-                        <div
-                          key={reg.id}
-                          className="bg-[#021b15] border border-emerald-800/70 rounded-xl p-4 flex flex-col justify-between space-y-3"
-                        >
-                          <div>
-                            <div className="flex items-start justify-between gap-2">
-                              <div>
-                                <div className="flex items-center gap-1.5">
-                                  <span className="px-2 py-0.5 rounded bg-emerald-500/20 border border-emerald-500/40 text-[10px] font-bold text-emerald-300">
-                                    Kategori Lomba
-                                  </span>
-                                  <span className="text-xs text-amber-200 font-semibold">
-                                    {reg.competitionName}
-                                  </span>
-                                </div>
-                                <h4 className="text-base font-bold text-white mt-1">
-                                  {reg.namaTimAtauPeserta}
-                                </h4>
-                              </div>
-                              <span className="text-xs text-emerald-300 font-mono-tabular shrink-0">
-                                {reg.statusVerifikasi}
-                              </span>
-                            </div>
-
-                            <div className="text-xs text-slate-300 mt-1">
-                              Kontingen: <strong className="text-white">{reg.satker}</strong> · Format:{' '}
-                              {reg.jenisPeserta} · Official: {reg.ketuaAtauOfficial}
-                            </div>
-
-                            <div className="mt-3 pt-2.5 border-t border-emerald-900/80">
-                              <div className="text-[11px] text-slate-400 mb-1">
-                                Daftar Peserta / Anggota ({reg.daftarPemain.length} orang):
-                              </div>
-                              <p className="text-xs text-emerald-200 leading-relaxed">
-                                {reg.daftarPemain.join(' · ')}
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="text-[11px] text-slate-400 flex items-center justify-between pt-2 border-t border-emerald-900/50">
-                            <span>Terdaftar: {reg.waktuDaftar}</span>
-                            {reg.catatanTambahan && (
-                              <span className="text-amber-200/80 truncate max-w-[240px]">
-                                {reg.catatanTambahan}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      ))}
+                      {lombaRegistrations.map((reg) => renderRegistrationCard(reg, 'Lomba'))}
                     </div>
                   )}
                 </div>
@@ -2749,6 +3129,151 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
               >
                 Pilih & Daftar Cabang Ini
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Read-Only User Modal: Report Player Typo / Add Player Request to Admin */}
+      {reportReg && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Laporkan Perbaikan atau Penambahan Pemain ke Admin"
+          className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4"
+        >
+          <div className="w-full max-w-lg bg-[#03251c] border border-amber-400/60 rounded-2xl p-5 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-start justify-between gap-3 border-b border-emerald-800 pb-3">
+              <div>
+                <div className="text-[11px] font-bold text-amber-300 flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>Pengajuan Perubahan Data Pemain ke Admin Panitia</span>
+                </div>
+                <h4 className="text-base font-bold text-white mt-0.5">
+                  {reportReg.namaTimAtauPeserta}
+                </h4>
+                <p className="text-xs text-slate-300">
+                  {reportReg.satker} · {reportReg.competitionName}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setReportReg(null)}
+                aria-label="Tutup"
+                className="p-1.5 rounded-lg bg-[#021b15] hover:bg-emerald-900 text-slate-300 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-3 rounded-xl bg-[#021b15] border border-emerald-800/80 text-[11px] text-slate-300 leading-relaxed">
+              <strong className="text-amber-300">Perlindungan Data Tim:</strong> Pengguna tidak
+              diizinkan mengedit daftar pemain secara langsung di website untuk mencegah tim lain
+              mengubah data tim Anda. Silakan kirim laporan perbaikan/penambahan pemain di bawah ini
+              agar diverifikasi dan diubah langsung oleh <strong>Admin Panitia</strong>.
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                  Daftar Pemain Saat Ini (Hanya Baca — {reportReg.daftarPemain.length} orang)
+                </label>
+                <div className="p-2.5 rounded-lg bg-[#021b15] border border-emerald-900 text-[11px] text-emerald-200 leading-relaxed max-h-24 overflow-y-auto">
+                  {reportReg.daftarPemain.join(' · ')}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                  Jenis Permohonan
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+                  {(
+                    [
+                      { id: 'koreksi', label: 'Perbaiki Salah Ketik' },
+                      { id: 'tambah', label: 'Tambah Pemain Baru' },
+                      { id: 'ganti', label: 'Ganti / Hapus Pemain' },
+                    ] as const
+                  ).map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => setReportType(opt.id)}
+                      className={`py-2 px-2.5 rounded-lg text-[11px] font-bold cursor-pointer transition-colors ${
+                        reportType === opt.id
+                          ? 'bg-amber-400 text-slate-950'
+                          : 'bg-[#021b15] text-slate-300 border border-emerald-800 hover:text-white'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                    Nama Pelapor / Official Tim *
+                  </label>
+                  <input
+                    type="text"
+                    value={reportPelaporNama}
+                    onChange={(e) => setReportPelaporNama(e.target.value)}
+                    placeholder="Nama official / ketua tim"
+                    className="w-full px-3 py-2 rounded-lg bg-[#021b15] border border-emerald-700 text-xs text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                    No. WhatsApp Pelapor (Opsional)
+                  </label>
+                  <input
+                    type="text"
+                    value={reportPelaporWa}
+                    onChange={(e) => setReportPelaporWa(e.target.value)}
+                    placeholder="08xxxxxxxxxx"
+                    className="w-full px-3 py-2 rounded-lg bg-[#021b15] border border-emerald-700 text-xs text-white font-mono-tabular"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-amber-300 mb-1">
+                  Rincian Koreksi / Nama Pemain yang Ingin Ditambahkan *
+                </label>
+                <textarea
+                  rows={3}
+                  value={reportDetail}
+                  onChange={(e) => setReportDetail(e.target.value)}
+                  placeholder="Contoh: Mohon perbaiki nama 'Moh. Rifal Salamses' menjadi 'Moh. Rifal Salama', dan tambahkan 1 pemain baru: Ahmad Fauzi."
+                  className="w-full px-3 py-2 rounded-lg bg-[#021b15] border border-emerald-700 text-xs text-white leading-relaxed"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-end gap-2 pt-3 border-t border-emerald-800">
+              <button
+                type="button"
+                onClick={handleCopyReportText}
+                className="px-3.5 py-2 rounded-lg bg-[#021b15] hover:bg-emerald-900 border border-emerald-700 text-amber-200 font-semibold text-xs flex items-center gap-1.5 cursor-pointer"
+              >
+                {reportCopied ? (
+                  <Check className="w-3.5 h-3.5 text-emerald-300" />
+                ) : (
+                  <Copy className="w-3.5 h-3.5" />
+                )}
+                <span>{reportCopied ? 'Teks Laporan Disalin!' : 'Salin Teks Laporan'}</span>
+              </button>
+              <a
+                href={`https://wa.me/?text=${encodeURIComponent(formattedReportText)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-4 py-2 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow-sm"
+              >
+                <Share2 className="w-3.5 h-3.5" />
+                <span>Kirim Laporan via WhatsApp ke Admin</span>
+              </a>
             </div>
           </div>
         </div>
