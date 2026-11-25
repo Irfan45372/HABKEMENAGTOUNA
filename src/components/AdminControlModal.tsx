@@ -23,11 +23,14 @@ import {
   ALLOW_VIDEO_FILE_UPLOAD,
   compressBannerImageFile,
   extractYoutubeEmbedUrl,
+  isRegistrationMitraExternal,
+  isRegistrationPendingVerification,
   normalizeBannerImageUrl,
   sanitizePlayerRoster,
   validateImportedState,
 } from '../utils/habLogic';
 import {
+  AlertTriangle,
   Check,
   Cloud,
   Download,
@@ -2314,16 +2317,56 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                         </button>
                       </div>
                     </div>
+                    {(() => {
+                      const pendingCount = appState.registrations.filter((r) =>
+                        isRegistrationPendingVerification(r)
+                      ).length;
+                      const externalCount = appState.registrations.filter((r) =>
+                        isRegistrationMitraExternal(r)
+                      ).length;
+                      if (pendingCount === 0 && externalCount === 0) return null;
+                      return (
+                        <div className="p-2.5 rounded-lg bg-rose-950/80 border border-rose-500/80 text-xs text-rose-100 flex items-center gap-2">
+                          <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                          <span>
+                            <strong>Verifikasi Mitra / Eksternal:</strong> {pendingCount} butuh verifikasi Admin (bertanda merah) · {externalCount} terdeteksi sebagai Mitra / Instansi Eksternal. Klik <strong>✓ Setujui</strong> jika disetujui di Rapat Teknis.
+                          </span>
+                        </div>
+                      );
+                    })()}
                     <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
                       {appState.registrations.map((reg) => {
                         const isEditing = editingRegId === reg.id && regEditDraft !== null;
+                        const isPending = isRegistrationPendingVerification(reg);
+                        const isMitraExt = isRegistrationMitraExternal(reg);
                         return (
                           <div
                             key={reg.id}
-                            className="bg-[#03251c] border border-emerald-800/70 rounded-lg p-3 space-y-2 text-xs"
+                            className={`rounded-lg p-3 space-y-2 text-xs transition-colors ${
+                              isPending
+                                ? 'bg-rose-950/35 border-2 border-rose-500/80'
+                                : 'bg-[#03251c] border border-emerald-800/70'
+                            }`}
                           >
-                            <div className="flex items-center justify-between gap-3">
-                              <div>
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-center gap-1.5 mb-0.5">
+                                  {isPending ? (
+                                    <span className="px-2 py-0.5 rounded bg-rose-600 text-white text-[10px] font-extrabold uppercase tracking-wide flex items-center gap-1">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                                      <span>Butuh Verifikasi Admin</span>
+                                    </span>
+                                  ) : (
+                                    <span className="px-2 py-0.5 rounded bg-emerald-900/90 border border-emerald-600/70 text-emerald-200 text-[10px] font-bold">
+                                      Terverifikasi
+                                    </span>
+                                  )}
+                                  {isMitraExt && (
+                                    <span className="px-2 py-0.5 rounded bg-rose-500/20 border border-rose-400/60 text-rose-200 text-[10px] font-bold">
+                                      Mitra / Eksternal
+                                    </span>
+                                  )}
+                                </div>
                                 <div className="font-bold text-white">
                                   {reg.namaTimAtauPeserta} —{' '}
                                   <span className="text-amber-300">{reg.competitionName}</span>
@@ -2333,7 +2376,44 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                                   {reg.daftarPemain.length}): {reg.daftarPemain.join(', ')}
                                 </div>
                               </div>
-                              <div className="flex items-center gap-1.5 shrink-0">
+                              <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const nextStatus: 'Terverifikasi' | 'Menunggu' = isPending
+                                      ? 'Terverifikasi'
+                                      : 'Menunggu';
+                                    onUpdateState((prev) => ({
+                                      ...prev,
+                                      registrations: prev.registrations.map((r) =>
+                                        r.id === reg.id
+                                          ? {
+                                              ...r,
+                                              statusVerifikasi: nextStatus,
+                                              adminVerified: nextStatus === 'Terverifikasi',
+                                            }
+                                          : r
+                                      ),
+                                    }));
+                                    notify(
+                                      nextStatus === 'Menunggu'
+                                        ? `⚠ "${reg.namaTimAtauPeserta}" ditandai MERAH (Butuh Verifikasi Admin).`
+                                        : `✓ "${reg.namaTimAtauPeserta}" disetujui & berstatus Terverifikasi!`
+                                    );
+                                  }}
+                                  className={`px-2.5 py-1 rounded border text-[11px] font-bold cursor-pointer flex items-center gap-1 ${
+                                    isPending
+                                      ? 'bg-emerald-600 hover:bg-emerald-500 border-emerald-400 text-white'
+                                      : 'bg-rose-950 hover:bg-rose-900 border-rose-500/70 text-rose-200'
+                                  }`}
+                                  title={
+                                    isPending
+                                      ? 'Setujui & verifikasi peserta ini agar dapat mengikuti pengundian'
+                                      : 'Tandai merah sebagai peserta yang butuh verifikasi Admin'
+                                  }
+                                >
+                                  {isPending ? '✓ Setujui' : '⚠ Tandai Merah'}
+                                </button>
                                 {isEditing ? (
                                   <>
                                     <button

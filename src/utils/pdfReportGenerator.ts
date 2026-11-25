@@ -10,6 +10,7 @@ import {
   ensureWhiteRibbonKemenagCanvas,
   loadAnonymousImage,
 } from '../components/DynamicLogoBadge';
+import { isRegistrationPendingVerification } from './habLogic';
 
 async function loadKemenagLogoDataUrl(branding?: BrandingConfig): Promise<string | null> {
   try {
@@ -486,7 +487,9 @@ export function generateRegistrationsCsvContent(
     Array.isArray(reg.daftarPemain) ? reg.daftarPemain.join('; ') : '-',
     reg.kontakWhatsapp || '-',
     reg.catatanTambahan || '-',
-    reg.statusVerifikasi || 'Terverifikasi',
+    isRegistrationPendingVerification(reg)
+      ? 'Butuh Verifikasi Admin'
+      : reg.statusVerifikasi || 'Terverifikasi',
     reg.waktuDaftar || '-',
   ]);
 

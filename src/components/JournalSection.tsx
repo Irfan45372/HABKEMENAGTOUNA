@@ -12,10 +12,13 @@ import {
   Check,
   ChevronRight,
   Copy,
+  Download,
   Edit3,
   ExternalLink,
+  Globe,
   Home,
   Image as ImageIcon,
+  Link2,
   Lock,
   Plus,
   Search,
@@ -67,21 +70,75 @@ function updateHeadMetaForJournal(article: JournalArticle | null) {
 }
 
 /**
- * Converts an image URL or DataURL into a JPEG File object so mobile browsers
- * can share the actual Foto Utama image file + link directly to WhatsApp!
+ * Loads an image safely onto an HTMLImageElement (ensuring explicit dimensions for inline SVGs
+ * and CORS-safe loading for external URLs so canvas.toBlob() never fails or taints).
  */
-async function createShareablePhotoFile(
+async function loadPhotoForCanvas(photoSrc: string): Promise<HTMLImageElement | null> {
+  const tryLoad = (src: string, useCors: boolean): Promise<HTMLImageElement> =>
+    new Promise((resolve, reject) => {
+      const img = new Image();
+      if (useCors) {
+        img.crossOrigin = 'anonymous';
+      }
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('Image load failed'));
+      img.src = src;
+    });
+
+  // Inline SVG DataURL: ensure explicit width/height attributes so Chrome/Edge always rasterize at 1200x675
+  if (photoSrc.startsWith('data:image/svg+xml')) {
+    try {
+      const commaIdx = photoSrc.indexOf(',');
+      if (commaIdx !== -1) {
+        const header = photoSrc.slice(0, commaIdx);
+        const payload = photoSrc.slice(commaIdx + 1);
+        let svgText = header.includes(';base64')
+          ? window.atob(payload)
+          : decodeURIComponent(payload);
+        if (!/\bwidth\s*=/.test(svgText.slice(0, 220))) {
+          svgText = svgText.replace('<svg', '<svg width="1200" height="675"');
+        }
+        const svgBlob = new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' });
+        const blobUrl = URL.createObjectURL(svgBlob);
+        try {
+          return await tryLoad(blobUrl, false);
+        } finally {
+          window.setTimeout(() => URL.revokeObjectURL(blobUrl), 3000);
+        }
+      }
+    } catch {
+      // Fall through to standard load
+    }
+  }
+
+  try {
+    return await tryLoad(photoSrc, !photoSrc.startsWith('data:'));
+  } catch {
+    // Retry external HTTP(S) images through CORS-enabled image proxy
+    if (photoSrc.startsWith('http://') || photoSrc.startsWith('https://')) {
+      try {
+        const proxied = `https://wsrv.nl/?url=${encodeURIComponent(
+          photoSrc.replace(/^https?:\/\//, '')
+        )}&w=1200&h=675&fit=cover&output=png`;
+        return await tryLoad(proxied, true);
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+}
+
+/**
+ * Renders the article's Foto Utama onto a 1200x675 branded canvas (with HAB ke-81 watermark & headline).
+ */
+async function createShareablePhotoCanvas(
   photoSrc: string,
   title: string
-): Promise<File | null> {
+): Promise<HTMLCanvasElement | null> {
   try {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    await new Promise<void>((resolve, reject) => {
-      img.onload = () => resolve();
-      img.onerror = () => reject(new Error('Image load failed'));
-      img.src = photoSrc;
-    });
+    const img = await loadPhotoForCanvas(photoSrc);
+    if (!img) return null;
 
     const canvas = document.createElement('canvas');
     const w = 1200;
@@ -95,9 +152,11 @@ async function createShareablePhotoFile(
     ctx.fillRect(0, 0, w, h);
 
     // Draw cover image
-    const scale = Math.max(w / (img.naturalWidth || w), h / (img.naturalHeight || h));
-    const dw = (img.naturalWidth || w) * scale;
-    const dh = (img.naturalHeight || h) * scale;
+    const natW = img.naturalWidth || w;
+    const natH = img.naturalHeight || h;
+    const scale = Math.max(w / natW, h / natH);
+    const dw = natW * scale;
+    const dh = natH * scale;
     ctx.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh);
 
     // Subtle bottom gradient bar with official watermark
@@ -116,13 +175,87 @@ async function createShareablePhotoFile(
     const shortTitle = title.length > 72 ? title.slice(0, 72) + '...' : title;
     ctx.fillText(shortTitle, 32, h - 24);
 
-    const blob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.88)
-    );
-    if (!blob) return null;
-    return new File([blob], 'jurnal-kemenag-touna.jpg', { type: 'image/jpeg' });
+    return canvas;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Converts an image URL or DataURL into a JPEG File object so mobile browsers
+ * can share the actual Foto Utama image file + link directly to WhatsApp!
+ */
+async function createShareablePhotoFile(
+  photoSrc: string,
+  title: string
+): Promise<File | null> {
+  const canvas = await createShareablePhotoCanvas(photoSrc, title);
+  if (!canvas) return null;
+  const blob = await new Promise<Blob | null>((resolve) =>
+    canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.88)
+  );
+  if (!blob) return null;
+  return new File([blob], 'jurnal-kemenag-touna.jpg', { type: 'image/jpeg' });
+}
+
+/**
+ * Copies the article's 1 Foto Utama directly as a PNG image into the PC/Laptop clipboard
+ * so pressing Ctrl+V in WhatsApp Web immediately attaches the photo alongside the pre-filled text!
+ */
+async function copyMainPhotoToClipboard(
+  photoSrc: string,
+  title: string
+): Promise<'copied' | 'downloaded' | 'failed'> {
+  if (!photoSrc) return 'failed';
+
+  const makePngBlob = async (): Promise<Blob> => {
+    const canvas = await createShareablePhotoCanvas(photoSrc, title);
+    if (!canvas) throw new Error('Canvas render failed');
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob((b) => resolve(b), 'image/png')
+    );
+    if (!blob) throw new Error('PNG blob failed');
+    return blob;
+  };
+
+  // Use Promise-backed ClipboardItem when supported so the browser preserves user-activation gesture
+  if (
+    typeof navigator !== 'undefined' &&
+    navigator.clipboard &&
+    'write' in navigator.clipboard &&
+    typeof ClipboardItem !== 'undefined'
+  ) {
+    try {
+      await navigator.clipboard.write([
+        new ClipboardItem({ 'image/png': makePngBlob() }),
+      ]);
+      return 'copied';
+    } catch {
+      try {
+        const blob = await makePngBlob();
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+        return 'copied';
+      } catch {
+        // Fall through to JPEG download fallback
+      }
+    }
+  }
+
+  // Fallback for browsers that disallow image clipboard write: download the photo directly
+  try {
+    const file = await createShareablePhotoFile(photoSrc, title);
+    if (!file) return 'failed';
+    const url = URL.createObjectURL(file);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'foto-utama-jurnal-hab81.jpg';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.setTimeout(() => URL.revokeObjectURL(url), 5000);
+    return 'downloaded';
+  } catch {
+    return 'failed';
   }
 }
 
@@ -182,7 +315,13 @@ export const JournalSection: React.FC<JournalSectionProps> = ({
 
   // Share & PIN states
   const [shareStatus, setShareStatus] = useState<string | null>(null);
+  const [copiedShareKey, setCopiedShareKey] = useState<string | null>(null);
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+  const [waWebShareModal, setWaWebShareModal] = useState<{
+    article: JournalArticle;
+    previewDataUrl: string | null;
+    copyState: 'preparing' | 'copied' | 'needs_manual';
+  } | null>(null);
   const [showPinModal, setShowPinModal] = useState<boolean>(false);
   const [pinInput, setPinInput] = useState<string>('');
   const [pinError, setPinError] = useState<string | null>(null);
@@ -210,9 +349,42 @@ export const JournalSection: React.FC<JournalSectionProps> = ({
     return `*${article.judul}*\n📅 ${article.tanggalWaktu}\n✍️ Oleh: ${article.penulis}\n\n_${leadSnippet}_\n\n👉 *Baca selengkapnya & lihat dokumentasi foto di Jurnal Resmi HAB ke-81 Kemenag Tojo Una-Una:*\n${url}`;
   };
 
+  const copyTextToClipboard = async (text: string): Promise<boolean> => {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch {
+      // Fallback below
+    }
+    try {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(textarea);
+      return ok;
+    } catch {
+      return false;
+    }
+  };
+
+  const triggerCopiedBadge = (key: string, message: string) => {
+    setCopiedShareKey(key);
+    setShareStatus(message);
+    window.setTimeout(() => {
+      setCopiedShareKey((prev) => (prev === key ? null : prev));
+    }, 3000);
+    window.setTimeout(() => setShareStatus(null), 3500);
+  };
+
   const handleShareWhatsAppWithPhoto = async (article: JournalArticle) => {
     const shareText = buildWhatsAppShareText(article);
-    const shareUrl = getArticleShareUrl(article.id);
 
     // 1. Try Native Web Share API with Foto Utama File attached (works on Android/iOS for WhatsApp!)
     if (navigator.share && article.photos[0]) {
@@ -235,7 +407,11 @@ export const JournalSection: React.FC<JournalSectionProps> = ({
       }
     }
 
-    // 2. Fallback: Open WhatsApp click-to-chat with formatted headline, summary & direct link
+    // 2. Fallback: Copy 1 Foto Utama to clipboard (for Ctrl+V) & open WhatsApp App click-to-chat
+    const photoResult = article.photos[0]
+      ? await copyMainPhotoToClipboard(article.photos[0], article.judul)
+      : 'failed';
+
     const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(shareText)}`;
     const a = document.createElement('a');
     a.href = waUrl;
@@ -243,23 +419,143 @@ export const JournalSection: React.FC<JournalSectionProps> = ({
     a.rel = 'noopener noreferrer';
     a.click();
 
-    try {
-      await navigator.clipboard.writeText(`${shareText}\n${shareUrl}`);
-      setShareStatus('Tautan & ringkasan berita siap dibagikan ke WhatsApp!');
+    if (photoResult === 'copied') {
+      setShareStatus(
+        '✓ 1 Foto Utama sudah disalin! Di WhatsApp tekan Ctrl+V agar Foto Utama tampil bersama teks berita.'
+      );
+    } else if (photoResult === 'downloaded') {
+      setShareStatus(
+        '✓ 1 Foto Utama otomatis diunduh — silakan seret/lampirkan foto tersebut bersama teks berita di WhatsApp.'
+      );
+    } else {
+      await copyTextToClipboard(shareText);
+      setShareStatus('Membuka Aplikasi WhatsApp (ringkasan & link berita disalin ke Clipboard).');
+    }
+    window.setTimeout(() => setShareStatus(null), 7000);
+  };
+
+  const handleShareWhatsAppWeb = async (article: JournalArticle) => {
+    // Open guided WhatsApp Web (+1 Foto Utama) modal so PC/Laptop Admin clearly sees the 1 Foto Utama
+    // copied to clipboard and knows to press Ctrl+V right inside WhatsApp Web before pressing Send!
+    setWaWebShareModal({
+      article,
+      previewDataUrl: article.photos[0] || null,
+      copyState: article.photos[0] ? 'preparing' : 'needs_manual',
+    });
+
+    if (!article.photos[0]) return;
+
+    const canvas = await createShareablePhotoCanvas(article.photos[0], article.judul);
+    const previewUrl = canvas ? canvas.toDataURL('image/jpeg', 0.88) : article.photos[0];
+
+    let copyState: 'copied' | 'needs_manual' = 'needs_manual';
+    if (
+      canvas &&
+      typeof navigator !== 'undefined' &&
+      navigator.clipboard &&
+      'write' in navigator.clipboard &&
+      typeof ClipboardItem !== 'undefined'
+    ) {
+      try {
+        const pngBlob = await new Promise<Blob | null>((resolve) =>
+          canvas.toBlob((b) => resolve(b), 'image/png')
+        );
+        if (pngBlob) {
+          await navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob })]);
+          copyState = 'copied';
+        }
+      } catch {
+        copyState = 'needs_manual';
+      }
+    }
+
+    setWaWebShareModal((prev) =>
+      prev && prev.article.id === article.id
+        ? { ...prev, previewDataUrl: previewUrl, copyState }
+        : prev
+    );
+  };
+
+  const handleLaunchWhatsAppWebFromModal = async (article: JournalArticle) => {
+    const shareText = buildWhatsAppShareText(article);
+    const waWebUrl = `https://web.whatsapp.com/send?text=${encodeURIComponent(shareText)}`;
+
+    // Copy 1 Foto Utama synchronously inside the click gesture so Chrome/Edge guarantees clipboard write
+    if (article.photos[0]) {
+      const result = await copyMainPhotoToClipboard(article.photos[0], article.judul);
+      setWaWebShareModal((prev) =>
+        prev && prev.article.id === article.id
+          ? { ...prev, copyState: result === 'copied' ? 'copied' : 'needs_manual' }
+          : prev
+      );
+    }
+
+    const a = document.createElement('a');
+    a.href = waWebUrl;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.click();
+  };
+
+  const handleDownloadMainPhoto = async (article: JournalArticle) => {
+    if (!article.photos[0]) return;
+    const file = await createShareablePhotoFile(article.photos[0], article.judul);
+    if (!file) {
+      setShareStatus('Gagal menyiapkan file unduhan Foto Utama.');
+      window.setTimeout(() => setShareStatus(null), 3500);
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `foto-utama-${article.id}.jpg`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.setTimeout(() => URL.revokeObjectURL(url), 5000);
+    setShareStatus('✓ 1 Foto Utama (.JPG) berhasil diunduh — siap dilampirkan di WhatsApp Web!');
+    window.setTimeout(() => setShareStatus(null), 4500);
+  };
+
+  const handleCopyMainPhoto = async (article: JournalArticle) => {
+    if (!article.photos[0]) return;
+    const result = await copyMainPhotoToClipboard(article.photos[0], article.judul);
+    if (result === 'copied') {
+      triggerCopiedBadge(
+        `photo-${article.id}`,
+        '✓ 1 Foto Utama tersalin! Tempel (Ctrl + V) langsung di kolom chat WhatsApp Web.'
+      );
+    } else if (result === 'downloaded') {
+      triggerCopiedBadge(
+        `photo-${article.id}`,
+        '✓ 1 Foto Utama berhasil diunduh untuk dilampirkan di WhatsApp Web.'
+      );
+    } else {
+      setShareStatus('Gagal menyalin Foto Utama. Silakan klik kanan pada foto lalu pilih Salin Gambar.');
       window.setTimeout(() => setShareStatus(null), 4000);
-    } catch {
-      // Ignore clipboard error
     }
   };
 
   const handleCopyArticleLink = async (article: JournalArticle) => {
     const url = getArticleShareUrl(article.id);
-    try {
-      await navigator.clipboard.writeText(url);
-      setShareStatus('Link langsung berita berhasil disalin ke Clipboard!');
-      window.setTimeout(() => setShareStatus(null), 3500);
-    } catch {
+    const copied = await copyTextToClipboard(url);
+    if (copied) {
+      triggerCopiedBadge(`link-${article.id}`, 'Link langsung berita berhasil disalin ke Clipboard!');
+    } else {
       setShareStatus(url);
+    }
+  };
+
+  const handleCopyArticleWaText = async (article: JournalArticle) => {
+    const shareText = buildWhatsAppShareText(article);
+    const copied = await copyTextToClipboard(shareText);
+    if (copied) {
+      triggerCopiedBadge(
+        `text-${article.id}`,
+        'Redaksi lengkap & link berita tersalin! Siap ditempel (Ctrl+V) di WhatsApp Web atau grup.'
+      );
+    } else {
+      setShareStatus(getArticleShareUrl(article.id));
     }
   };
 
@@ -636,14 +932,42 @@ export const JournalSection: React.FC<JournalSectionProps> = ({
                       Baca Selengkapnya →
                     </button>
 
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex flex-wrap items-center gap-1.5">
                       <button
                         type="button"
                         onClick={() => void handleShareWhatsAppWithPhoto(item)}
-                        className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                        title="Bagikan via Aplikasi WhatsApp / HP (dengan Foto Utama)"
+                        className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer"
                       >
                         <Share2 className="w-3 h-3" />
-                        <span>Share WA</span>
+                        <span>WA App</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleShareWhatsAppWeb(item)}
+                        title="Bagikan langsung melalui WhatsApp Web di browser Laptop/PC"
+                        className="px-2 py-1 rounded-lg bg-teal-700 hover:bg-teal-600 text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                      >
+                        <Globe className="w-3 h-3" />
+                        <span>WA Web</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleCopyArticleLink(item)}
+                        title="Salin link berita untuk ditempel manual"
+                        className="px-2 py-1 rounded-lg bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                      >
+                        {copiedShareKey === `link-${item.id}` ? (
+                          <>
+                            <Check className="w-3 h-3 text-emerald-600" />
+                            <span className="text-emerald-700">Tersalin</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3 h-3" />
+                            <span>Salin Link</span>
+                          </>
+                        )}
                       </button>
                       {isAdminUnlocked && (
                         <>
@@ -750,15 +1074,81 @@ export const JournalSection: React.FC<JournalSectionProps> = ({
                 </div>
               </div>
 
-              {/* WhatsApp Share Button (Foto Utama + Link Situs) */}
+              {/* WhatsApp Share Buttons: Aplikasi WA (HP/Desktop App), WhatsApp Web (Browser PC), & Salin Link Manual */}
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   onClick={() => void handleShareWhatsAppWithPhoto(activeArticle)}
-                  className="px-4 py-2.5 rounded-xl bg-[#16a34a] hover:bg-[#15803d] text-white font-bold text-xs flex items-center gap-2 cursor-pointer shadow-sm"
+                  title="Bagikan lewat Aplikasi WhatsApp / HP (ikut melampirkan Foto Utama di HP)"
+                  className="px-3.5 py-2 rounded-xl bg-[#16a34a] hover:bg-[#15803d] text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-sm"
                 >
-                  <Share2 className="w-4 h-4" />
-                  <span>Bagikan ke WhatsApp (Foto Utama + Link)</span>
+                  <Share2 className="w-3.5 h-3.5" />
+                  <span>WA Aplikasi / HP</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleShareWhatsAppWeb(activeArticle)}
+                  title="Buka WhatsApp Web & otomatis salin 1 Foto Utama (tinggal tekan Ctrl+V di WhatsApp Web)"
+                  className="px-3.5 py-2 rounded-xl bg-teal-700 hover:bg-teal-800 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-sm"
+                >
+                  <Globe className="w-3.5 h-3.5" />
+                  <span>WhatsApp Web (+1 Foto Utama)</span>
+                </button>
+                {activeArticle.photos[0] && (
+                  <button
+                    type="button"
+                    onClick={() => void handleCopyMainPhoto(activeArticle)}
+                    title="Salin 1 Foto Utama berita agar bisa ditempel (Ctrl+V) langsung ke WhatsApp Web"
+                    className="px-3 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-900 font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+                  >
+                    {copiedShareKey === `photo-${activeArticle.id}` ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-600" />
+                        <span className="text-emerald-700">Foto Disalin (Ctrl+V)!</span>
+                      </>
+                    ) : (
+                      <>
+                        <ImageIcon className="w-3.5 h-3.5" />
+                        <span>Salin Foto Utama</span>
+                      </>
+                    )}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => void handleCopyArticleLink(activeArticle)}
+                  title="Salin link berita langsung ke Clipboard"
+                  className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-800 font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  {copiedShareKey === `link-${activeArticle.id}` ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                      <span className="text-emerald-700">Link Tersalin!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Link2 className="w-3.5 h-3.5" />
+                      <span>Salin Link</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleCopyArticleWaText(activeArticle)}
+                  title="Salin judul, ringkasan, dan link berita untuk ditempel manual ke WhatsApp Web"
+                  className="px-3 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  {copiedShareKey === `text-${activeArticle.id}` ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                      <span className="text-emerald-700">Teks &amp; Link Tersalin!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Salin Teks &amp; Link</span>
+                    </>
+                  )}
                 </button>
               </div>
             </div>
@@ -842,19 +1232,99 @@ export const JournalSection: React.FC<JournalSectionProps> = ({
               </div>
             )}
 
-            {/* Bottom Article Footer & WhatsApp Share */}
-            <div className="pt-6 border-t border-slate-200 flex flex-wrap items-center justify-between gap-4">
-              <div className="text-[8px] font-normal tracking-wide text-slate-400/60 uppercase select-none">
-                by HUMAS KEMENTERIAN AGAMA KABUPATEN TOJO UNA UNA
+            {/* Bottom Article Footer, Manual Copyable Link Box & WhatsApp Share (App + Web) */}
+            <div className="pt-6 border-t border-slate-200 space-y-4">
+              {/* Direct Selectable Link Strip for Laptop/PC Manual Copy */}
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center gap-2">
+                <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wide shrink-0 flex items-center gap-1.5">
+                  <Link2 className="w-3.5 h-3.5 text-emerald-700" />
+                  <span>Link Berita:</span>
+                </span>
+                <input
+                  type="text"
+                  readOnly
+                  value={getArticleShareUrl(activeArticle.id)}
+                  onFocus={(e) => e.currentTarget.select()}
+                  className="flex-1 min-w-0 px-2.5 py-1.5 rounded-lg bg-white border border-slate-300 text-xs font-mono text-slate-800 focus:outline-none focus:border-emerald-600"
+                />
+                <button
+                  type="button"
+                  onClick={() => void handleCopyArticleLink(activeArticle)}
+                  className="px-3 py-1.5 rounded-lg bg-emerald-800 hover:bg-emerald-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
+                >
+                  {copiedShareKey === `link-${activeArticle.id}` ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-amber-300" />
+                      <span>Tersalin!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Salin Link</span>
+                    </>
+                  )}
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => void handleShareWhatsAppWithPhoto(activeArticle)}
-                className="px-4 py-2 rounded-xl bg-[#16a34a] hover:bg-[#15803d] text-white font-bold text-xs flex items-center gap-2 cursor-pointer"
-              >
-                <Share2 className="w-3.5 h-3.5" />
-                <span>Bagikan Berita Ini ke WhatsApp</span>
-              </button>
+
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="text-[8px] font-normal tracking-wide text-slate-400/60 uppercase select-none">
+                  by HUMAS KEMENTERIAN AGAMA KABUPATEN TOJO UNA UNA
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void handleCopyArticleWaText(activeArticle)}
+                    className="px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+                  >
+                    {copiedShareKey === `text-${activeArticle.id}` ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-600" />
+                        <span className="text-emerald-700">Teks &amp; Link Tersalin!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Salin Teks &amp; Link</span>
+                      </>
+                    )}
+                  </button>
+                  {activeArticle.photos[0] && (
+                    <button
+                      type="button"
+                      onClick={() => void handleCopyMainPhoto(activeArticle)}
+                      className="px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-900 font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+                    >
+                      {copiedShareKey === `photo-${activeArticle.id}` ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-emerald-600" />
+                          <span className="text-emerald-700">Foto Disalin (Ctrl+V)!</span>
+                        </>
+                      ) : (
+                        <>
+                          <ImageIcon className="w-3.5 h-3.5" />
+                          <span>Salin 1 Foto Utama</span>
+                        </>
+                      )}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => void handleShareWhatsAppWeb(activeArticle)}
+                    className="px-3.5 py-2 rounded-xl bg-teal-700 hover:bg-teal-800 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Globe className="w-3.5 h-3.5" />
+                    <span>WhatsApp Web (+1 Foto Utama)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleShareWhatsAppWithPhoto(activeArticle)}
+                    className="px-3.5 py-2 rounded-xl bg-[#16a34a] hover:bg-[#15803d] text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Share2 className="w-3.5 h-3.5" />
+                    <span>Bagikan via Aplikasi WA</span>
+                  </button>
+                </div>
+              </div>
             </div>
           </article>
         ) : (
@@ -1233,6 +1703,121 @@ export const JournalSection: React.FC<JournalSectionProps> = ({
               Buka Akses Edit & Hapus
             </button>
           </form>
+        </div>
+      )}
+
+      {/* Guided WhatsApp Web (+1 Foto Utama) Share Modal for PC/Laptop */}
+      {waWebShareModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#03251c] border-2 border-emerald-400/70 rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl text-white">
+            <div className="px-5 py-3.5 bg-[#021b15] border-b border-emerald-800 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Globe className="w-4 h-4 text-emerald-400" />
+                <h3 className="text-sm font-bold text-amber-300">
+                  Bagikan ke WhatsApp Web (+1 Foto Utama)
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setWaWebShareModal(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              {/* Live 1 Foto Utama Preview */}
+              {waWebShareModal.previewDataUrl && (
+                <div className="space-y-1.5">
+                  <div className="text-[11px] font-bold text-emerald-300 uppercase tracking-wide flex items-center justify-between">
+                    <span>Pratinjau 1 Foto Utama yang Akan Tampil di WA:</span>
+                    {waWebShareModal.copyState === 'copied' && (
+                      <span className="text-amber-300 flex items-center gap-1">
+                        <Check className="w-3.5 h-3.5" />
+                        Tersalin di Clipboard
+                      </span>
+                    )}
+                  </div>
+                  <div className="rounded-xl overflow-hidden border border-emerald-700 bg-[#021b15]">
+                    <img
+                      src={waWebShareModal.previewDataUrl}
+                      alt={waWebShareModal.article.judul}
+                      className="w-full max-h-52 object-cover"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Clear 2-Step Instructions so Foto Utama ALWAYS appears in WhatsApp Web */}
+              <div className="p-3.5 rounded-xl bg-[#021b15] border border-amber-400/40 space-y-2 text-xs">
+                <div className="font-bold text-amber-300">
+                  Cara Menampilkan 1 Foto Utama + Teks Berita di WhatsApp Web:
+                </div>
+                <ol className="list-decimal list-inside space-y-1.5 text-slate-200 leading-relaxed">
+                  <li>
+                    Klik tombol <strong className="text-emerald-300">Buka WhatsApp Web</strong> di bawah
+                    (teks judul, ringkasan &amp; link berita otomatis masuk ke kolom chat).
+                  </li>
+                  <li>
+                    Setelah memilih grup/kontak di WhatsApp Web, tekan{' '}
+                    <kbd className="px-1.5 py-0.5 rounded bg-amber-400 text-slate-950 font-extrabold text-[11px]">
+                      Ctrl + V
+                    </kbd>{' '}
+                    di kolom ketik <strong>sebelum menekan Kirim</strong> — 1 Foto Utama akan langsung
+                    menempel menggantikan logo default!
+                  </li>
+                </ol>
+                {waWebShareModal.copyState === 'needs_manual' && (
+                  <p className="text-[11px] text-amber-200 pt-1 border-t border-emerald-900">
+                    Tip: Jika Ctrl+V belum menempelkan gambar di browser Anda, klik{' '}
+                    <strong>Salin 1 Foto Utama</strong> atau <strong>Unduh Foto (.JPG)</strong> di bawah lalu
+                    seret/lampirkan ke chat WhatsApp Web.
+                  </p>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleLaunchWhatsAppWebFromModal(waWebShareModal.article)}
+                  className="w-full py-2.5 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs flex items-center justify-center gap-2 cursor-pointer shadow-lg"
+                >
+                  <Globe className="w-4 h-4" />
+                  <span>1. Salin Foto Utama &amp; Buka WhatsApp Web →</span>
+                </button>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void handleCopyMainPhoto(waWebShareModal.article)}
+                    className="py-2 px-3 rounded-xl bg-[#021b15] hover:bg-emerald-900 border border-emerald-700 text-emerald-200 font-bold text-[11px] flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    {copiedShareKey === `photo-${waWebShareModal.article.id}` ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-amber-300" />
+                        <span className="text-amber-300">Foto Tersalin!</span>
+                      </>
+                    ) : (
+                      <>
+                        <ImageIcon className="w-3.5 h-3.5" />
+                        <span>Salin Ulang Foto Utama</span>
+                      </>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleDownloadMainPhoto(waWebShareModal.article)}
+                    className="py-2 px-3 rounded-xl bg-[#021b15] hover:bg-emerald-900 border border-amber-400/50 text-amber-200 font-bold text-[11px] flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Unduh Foto (.JPG)</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

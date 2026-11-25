@@ -12,6 +12,7 @@ import {
   extractYoutubeEmbedUrl,
   generateKnockoutDrawMatches,
   generatePoolDrawGroups,
+  isRegistrationPendingVerification,
   normalizeCompetitionCategory,
   shuffleParticipantsSecure,
 } from '../utils/habLogic';
@@ -278,7 +279,7 @@ export const LiveTournamentDrawPanel: React.FC<LiveTournamentDrawPanelProps> = (
 
   const handlePullFromRegistrations = () => {
     setDrawError(null);
-    const filtered = registrations.filter((reg) => {
+    const matchingAll = registrations.filter((reg) => {
       if (regSourceFilter === 'ALL') return true;
       if (regSourceFilter === 'CAT_OLAHRAGA') {
         return normalizeCompetitionCategory(reg.kategori) === 'Olahraga';
@@ -289,9 +290,14 @@ export const LiveTournamentDrawPanel: React.FC<LiveTournamentDrawPanelProps> = (
       return reg.competitionId === regSourceFilter;
     });
 
+    const pendingCount = matchingAll.filter((r) => isRegistrationPendingVerification(r)).length;
+    const filtered = matchingAll.filter((r) => !isRegistrationPendingVerification(r));
+
     if (filtered.length === 0) {
       setDrawError(
-        'Belum ada pendaftar pada filter tersebut. Anda bisa mengetik daftar tim secara manual di kotak teks atau mengambil Daftar Satker.'
+        pendingCount > 0
+          ? `Terdapat ${pendingCount} pendaftar Mitra/Eksternal pada filter ini, namun seluruhnya masih berstatus BUTUH VERIFIKASI ADMIN (merah). Verifikasi terlebih dahulu sebelum dimasukkan ke undian.`
+          : 'Belum ada pendaftar pada filter tersebut. Anda bisa mengetik daftar tim secara manual di kotak teks atau mengambil Daftar Satker.'
       );
       return;
     }
@@ -303,9 +309,11 @@ export const LiveTournamentDrawPanel: React.FC<LiveTournamentDrawPanelProps> = (
     );
     setRawTeamsText(lines.join('\n'));
     setDrawNotice(
-      `✓ ${lines.length} tim/peserta diambil dari data pendaftar ke kotak input manual. Silakan edit/tambah jika ada tim susulan.`
+      pendingCount > 0
+        ? `✓ ${lines.length} tim terverifikasi diambil ke kotak undian (${pendingCount} tim Mitra/Eksternal berstatus Butuh Verifikasi Admin dilewati hingga disetujui).`
+        : `✓ ${lines.length} tim/peserta diambil dari data pendaftar ke kotak input manual. Silakan edit/tambah jika ada tim susulan.`
     );
-    window.setTimeout(() => setDrawNotice(null), 4000);
+    window.setTimeout(() => setDrawNotice(null), 5000);
   };
 
   const handlePullFromSatkers = () => {

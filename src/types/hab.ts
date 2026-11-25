@@ -45,6 +45,7 @@ export interface ParticipantRegistration {
   catatanTambahan?: string;
   waktuDaftar: string;
   statusVerifikasi: 'Terverifikasi' | 'Menunggu';
+  adminVerified?: boolean;
 }
 
 export interface MatchScore {

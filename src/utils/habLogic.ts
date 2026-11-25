@@ -146,6 +146,59 @@ export function normalizeCompetitionCategory(rawCategory?: string): 'Olahraga' |
 }
 
 /**
+ * Detects whether a kontingen/team belongs to a Mitra Kemenag or External Institution
+ * (e.g. BRI/Perbankan, BUMN, Pemda, Masyarakat Umum, or custom non-Kemenag institution)
+ * that requires Admin verification before being approved for official draws.
+ */
+const EXTERNAL_MITRA_PATTERN =
+  /\b(mitra|masyarakat\s+umum|peserta\s+umum|kontingen\s+umum|eksternal|bri|bni|bsi|mandiri|bca|btn|bank|perbankan|bumn|bumd|pemda|pemkab|dinas|opd|polres|kodim|tni|polri|kejaksaan|kejari|pengadilan|dprd|bpjs|pln|telkom|pdam|pegadaian|pos\s+indonesia|kppn|bps|bawaslu|kpu|rsud|swasta|ormas|komunitas|pt\.|cv\.)\b/i;
+
+const INTERNAL_KEMENAG_PATTERN =
+  /\b(kemenag|kankemenag|kementerian\s+agama|kanwil|kua|man|mtsn?|min|mis|mi|ra|madrasah|ponpes|pesantren|dwp|dharma\s+wanita|penyuluh|penghulu|pengawas|fkub|kkm|kkmi|kkmts|kkma|igra|pgmi|mgmp|pokjawas|pokjaluh|apri|ipari|seksi|subbag|subbagian|sub\s+bagian|tata\s+usaha|pendidikan\s+islam|pendis|pendibis|penmad|pais|pontren|bimbingan\s+masyarakat|bimas|bimais|penyelenggara|haji|umrah|phu|zakat|wakaf|zawa|kristen|katolik|hindu|buddha|setjen|sekjen|sekretariat|humas|kepegawaian|keuangan|perencanaan|panitia\s+hab)\b/i;
+
+export function isMitraOrExternalRegistration(
+  satker: string,
+  teamName: string = '',
+  isCustomSatker: boolean = false
+): boolean {
+  const cleanSatker = (satker || '').trim();
+  const cleanTeam = (teamName || '').trim();
+  const combined = `${cleanSatker} ${cleanTeam}`.trim();
+
+  if (!combined) return false;
+  if (EXTERNAL_MITRA_PATTERN.test(combined)) return true;
+  if (INTERNAL_KEMENAG_PATTERN.test(cleanSatker) || INTERNAL_KEMENAG_PATTERN.test(cleanTeam)) {
+    return false;
+  }
+  if (cleanSatker) {
+    return isCustomSatker || !INTERNAL_KEMENAG_PATTERN.test(combined);
+  }
+  return false;
+}
+
+export function isRegistrationMitraExternal(
+  reg: Pick<ParticipantRegistration, 'satker' | 'namaTimAtauPeserta'>
+): boolean {
+  return isMitraOrExternalRegistration(reg.satker, reg.namaTimAtauPeserta, false);
+}
+
+/**
+ * Returns true whenever a registration requires Admin verification:
+ * - Explicitly flagged as 'Menunggu', OR
+ * - Detected as Mitra Kemenag / External Institution and not yet explicitly approved by Admin (adminVerified !== true).
+ */
+export function isRegistrationPendingVerification(
+  reg: Pick<
+    ParticipantRegistration,
+    'satker' | 'namaTimAtauPeserta' | 'statusVerifikasi' | 'adminVerified'
+  >
+): boolean {
+  if (reg.statusVerifikasi === 'Menunggu') return true;
+  if (isRegistrationMitraExternal(reg) && reg.adminVerified !== true) return true;
+  return false;
+}
+
+/**
  * Creates a normalized ParticipantRegistration record.
  */
 export function createRegistrationRecord(params: {
@@ -163,6 +216,8 @@ export function createRegistrationRecord(params: {
   daftarPemain: string[];
   catatanTambahan?: string;
   waktuDaftar?: string;
+  isCustomSatker?: boolean;
+  statusVerifikasi?: 'Terverifikasi' | 'Menunggu';
 }): ParticipantRegistration {
   const cleanPlayers = params.daftarPemain.map((p) => p.trim()).filter(Boolean);
   const customTrimmed = params.customCabangName.trim();
@@ -171,6 +226,13 @@ export function createRegistrationRecord(params: {
     : customTrimmed || params.competition?.nama || 'Cabang Lomba';
   const effectiveCategory =
     params.selectedMainCategory || normalizeCompetitionCategory(params.competition?.kategori);
+  const needsAdminVerification = isMitraOrExternalRegistration(
+    params.satker,
+    params.namaTimAtauPeserta,
+    Boolean(params.isCustomSatker)
+  );
+  const resolvedStatus: 'Terverifikasi' | 'Menunggu' =
+    params.statusVerifikasi ?? (needsAdminVerification ? 'Menunggu' : 'Terverifikasi');
 
   return {
     id: params.id,
@@ -194,7 +256,8 @@ export function createRegistrationRecord(params: {
       month: 'short',
       year: 'numeric',
     }),
-    statusVerifikasi: 'Terverifikasi',
+    statusVerifikasi: resolvedStatus,
+    ...(needsAdminVerification ? { adminVerified: resolvedStatus === 'Terverifikasi' } : {}),
   };
 }
 
