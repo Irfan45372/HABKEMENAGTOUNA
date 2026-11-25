@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { AnnouncementLetter, BrandingConfig, ScheduleEvent } from '../types/hab';
+import { AnnouncementLetter, AnnouncementMode, BrandingConfig, ScheduleEvent } from '../types/hab';
 import { buildDeepLink, shareToWhatsAppWithFullImage } from '../utils/shareUtils';
 import {
   createBlobUrlFromDataUrl,
   downloadGeneratedOfficialLetterDoc,
   formatAnnouncementWhatsAppText,
+  getAnnouncementMode,
   getAnnouncementSnippetWords,
   getAnnouncementUrlSlug,
   getEmbeddableDocumentUrl,
@@ -34,6 +35,7 @@ import {
   Trash2,
   Upload,
   X,
+  Zap,
 } from 'lucide-react';
 
 interface PanitiaInfoModalProps {
@@ -74,9 +76,9 @@ export const PanitiaInfoModal: React.FC<PanitiaInfoModalProps> = ({
   const [pendingEditIdxAfterPin, setPendingEditIdxAfterPin] = useState<number | null>(null);
   const [showScheduleInStandalone, setShowScheduleInStandalone] = useState(false);
 
-  // New Announcement + Optional Letter Upload State
+  // New Announcement + 2-Mode Toggle ('cepat' = Informasi Cepat Tanpa Surat, 'surat' = Dengan Surat Resmi)
   const [newAnnouncementText, setNewAnnouncementText] = useState('');
-  const [showNewLetterForm, setShowNewLetterForm] = useState(false);
+  const [newAnnouncementMode, setNewAnnouncementMode] = useState<AnnouncementMode>('cepat');
   const [newLetterDraft, setNewLetterDraft] = useState<Omit<
     AnnouncementLetter,
     'id' | 'waktuUpload'
@@ -91,6 +93,7 @@ export const PanitiaInfoModal: React.FC<PanitiaInfoModalProps> = ({
   // Existing Announcement + Letter Edit State
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editingText, setEditingText] = useState('');
+  const [editAnnouncementMode, setEditAnnouncementMode] = useState<AnnouncementMode>('surat');
   const [editLetterDraft, setEditLetterDraft] = useState<AnnouncementLetter | null>(null);
   const [editLetterNomor, setEditLetterNomor] = useState('');
   const [editLetterPerihal, setEditLetterPerihal] = useState('');
@@ -107,16 +110,17 @@ export const PanitiaInfoModal: React.FC<PanitiaInfoModalProps> = ({
   } | null>(null);
   const [activeBlobUrl, setActiveBlobUrl] = useState<string | null>(null);
 
-  // Direct inline letter preview on the web page (auto-open when ?pengumuman= is visited)
+  // Direct inline letter preview on the web page (auto-open when ?pengumuman= is visited, ONLY if mode === 'surat')
   const [inlineLetterIndex, setInlineLetterIndex] = useState<number | null>(() => {
     try {
       const params = new URLSearchParams(window.location.search);
       const num = parseInt(params.get('pengumuman') || '', 10);
       if (!Number.isNaN(num) && num >= 1) {
-        return num - 1;
+        const idx = num - 1;
+        return getAnnouncementMode(branding.announcementModes, idx) === 'surat' ? idx : null;
       }
       if (params.get('halaman') === 'pengumuman') {
-        return 0;
+        return getAnnouncementMode(branding.announcementModes, 0) === 'surat' ? 0 : null;
       }
     } catch {
       // Ignore
@@ -151,6 +155,10 @@ export const PanitiaInfoModal: React.FC<PanitiaInfoModalProps> = ({
 
   const announcementLetters: (AnnouncementLetter | null)[] = announcements.map(
     (_, idx) => branding.announcementLetters?.[idx] || null
+  );
+
+  const announcementModes: AnnouncementMode[] = announcements.map((_, idx) =>
+    getAnnouncementMode(branding.announcementModes, idx)
   );
 
   // Manage Blob URL for inline PDF/Word viewer when inlineLetterIndex is active
@@ -190,6 +198,8 @@ export const PanitiaInfoModal: React.FC<PanitiaInfoModalProps> = ({
     announcements[highlightedAnnouncementIndex] ||
     announcements[0] ||
     'Pengumuman Resmi Panitia HAB ke-81 Kemenag Kab. Tojo Una-Una Tahun 2027';
+  const primaryAnnouncementMode: AnnouncementMode =
+    announcementModes[highlightedAnnouncementIndex] || 'surat';
   const primaryRedaksiSlug = getAnnouncementUrlSlug(primaryAnnouncementText, 6);
   const primarySnippetWords = getAnnouncementSnippetWords(primaryAnnouncementText, 6);
 
@@ -250,8 +260,10 @@ export const PanitiaInfoModal: React.FC<PanitiaInfoModalProps> = ({
 
   const openEditorForAnnouncement = (idx: number, currentText: string) => {
     const existingLetter = announcementLetters[idx] || null;
+    const existingMode = announcementModes[idx] || 'surat';
     setEditingIndex(idx);
     setEditingText(currentText);
+    setEditAnnouncementMode(existingMode);
     setEditLetterDraft(existingLetter);
     setEditLetterNomor(existingLetter?.nomorSurat || '');
     setEditLetterPerihal(existingLetter?.perihalSurat || '');
@@ -426,34 +438,41 @@ export const PanitiaInfoModal: React.FC<PanitiaInfoModalProps> = ({
     const cleaned = newAnnouncementText.trim();
     if (!cleaned || !onUpdateBranding) return;
 
-    const finalLetter = buildFinalLetterObject(
-      newLetterDraft,
-      newLetterNomor,
-      newLetterPerihal,
-      newLetterExternalUrl,
-      newLetterIsiTeks
-    );
+    const finalLetter =
+      newAnnouncementMode === 'surat'
+        ? buildFinalLetterObject(
+            newLetterDraft,
+            newLetterNomor,
+            newLetterPerihal,
+            newLetterExternalUrl,
+            newLetterIsiTeks
+          )
+        : null;
 
     const updatedAnnouncements = [...announcements, cleaned];
     const updatedLetters = [...announcementLetters, finalLetter];
+    const updatedModes: AnnouncementMode[] = [...announcementModes, newAnnouncementMode];
 
     onUpdateBranding({
       runningTextItems: updatedAnnouncements,
       announcementLetters: updatedLetters,
+      announcementModes: updatedModes,
     });
 
     setNewAnnouncementText('');
+    setNewAnnouncementMode('cepat');
     setNewLetterDraft(null);
     setNewLetterNomor('');
     setNewLetterPerihal('');
     setNewLetterExternalUrl('');
     setNewLetterIsiTeks('');
     setNewLetterNotice(null);
-    setShowNewLetterForm(false);
     triggerSavedNotice(
-      finalLetter
+      newAnnouncementMode === 'cepat'
+        ? '✓ Informasi Cepat (tanpa surat) berhasil ditambahkan & disimpan ke Cloud.'
+        : finalLetter
         ? `✓ Pengumuman baru beserta lampiran surat "${finalLetter.fileName}" berhasil disimpan!`
-        : '✓ Pengumuman baru berhasil ditambahkan & disimpan ke Cloud.'
+        : '✓ Pengumuman dengan Lembar Surat Resmi berhasil ditambahkan & disimpan ke Cloud.'
     );
   };
 
@@ -461,13 +480,16 @@ export const PanitiaInfoModal: React.FC<PanitiaInfoModalProps> = ({
     const cleaned = editingText.trim();
     if (!cleaned || !onUpdateBranding) return;
 
-    const finalLetter = buildFinalLetterObject(
-      editLetterDraft,
-      editLetterNomor,
-      editLetterPerihal,
-      editLetterExternalUrl,
-      editLetterIsiTeks
-    );
+    const finalLetter =
+      editAnnouncementMode === 'surat'
+        ? buildFinalLetterObject(
+            editLetterDraft,
+            editLetterNomor,
+            editLetterPerihal,
+            editLetterExternalUrl,
+            editLetterIsiTeks
+          )
+        : editLetterDraft;
 
     const updatedAnnouncements = [...announcements];
     updatedAnnouncements[idx] = cleaned;
@@ -475,18 +497,50 @@ export const PanitiaInfoModal: React.FC<PanitiaInfoModalProps> = ({
     const updatedLetters = [...announcementLetters];
     updatedLetters[idx] = finalLetter;
 
+    const updatedModes: AnnouncementMode[] = [...announcementModes];
+    updatedModes[idx] = editAnnouncementMode;
+
     onUpdateBranding({
       runningTextItems: updatedAnnouncements,
       announcementLetters: updatedLetters,
+      announcementModes: updatedModes,
     });
+
+    if (editAnnouncementMode === 'cepat' && inlineLetterIndex === idx) {
+      setInlineLetterIndex(null);
+    }
 
     setEditingIndex(null);
     setEditingText('');
     setEditLetterDraft(null);
     triggerSavedNotice(
-      finalLetter
+      editAnnouncementMode === 'cepat'
+        ? `✓ Pengumuman #${idx + 1} diperbarui sebagai Informasi Cepat (tanpa surat).`
+        : finalLetter
         ? `✓ Pengumuman #${idx + 1} & Lampiran Surat "${finalLetter.fileName}" berhasil disimpan!`
-        : `✓ Pengumuman #${idx + 1} berhasil diperbarui & disimpan.`
+        : `✓ Pengumuman #${idx + 1} (Dengan Surat Resmi) berhasil diperbarui & disimpan.`
+    );
+  };
+
+  const handleQuickToggleMode = (idx: number) => {
+    if (!onUpdateBranding) return;
+    const currentMode = announcementModes[idx] || 'surat';
+    const nextMode: AnnouncementMode = currentMode === 'surat' ? 'cepat' : 'surat';
+    const updatedModes: AnnouncementMode[] = [...announcementModes];
+    updatedModes[idx] = nextMode;
+
+    onUpdateBranding({
+      announcementModes: updatedModes,
+    });
+
+    if (nextMode === 'cepat' && inlineLetterIndex === idx) {
+      setInlineLetterIndex(null);
+    }
+
+    triggerSavedNotice(
+      nextMode === 'cepat'
+        ? `✓ Pengumuman #${idx + 1} diubah ke mode Informasi Cepat (tanpa surat).`
+        : `✓ Pengumuman #${idx + 1} diubah ke mode Dengan Surat Resmi.`
     );
   };
 
@@ -494,13 +548,18 @@ export const PanitiaInfoModal: React.FC<PanitiaInfoModalProps> = ({
     if (!onUpdateBranding) return;
     const updatedAnnouncements = announcements.filter((_, i) => i !== idx);
     const updatedLetters = announcementLetters.filter((_, i) => i !== idx);
+    const updatedModes = announcementModes.filter((_, i) => i !== idx);
     onUpdateBranding({
       runningTextItems: updatedAnnouncements,
       announcementLetters: updatedLetters,
+      announcementModes: updatedModes,
     });
     if (editingIndex === idx) {
       setEditingIndex(null);
       setEditingText('');
+    }
+    if (inlineLetterIndex === idx) {
+      setInlineLetterIndex(null);
     }
     triggerSavedNotice(`Pengumuman #${idx + 1} berhasil dihapus.`);
   };
@@ -541,27 +600,37 @@ export const PanitiaInfoModal: React.FC<PanitiaInfoModalProps> = ({
   };
 
   const handleShareAllPanitiaInfoToWa = async () => {
+    const hasAnyLetterMode = announcementModes.some((m) => m === 'surat');
     const bulletAnnouncements = announcements
       .map((item, idx) => {
         const snippet = getAnnouncementSnippetWords(item, 6);
+        const mode = announcementModes[idx] || 'surat';
         const letter = announcementLetters[idx];
-        const letterNote = letter
-          ? `\n   📎 _Dilengkapi Surat Resmi: ${letter.perihalSurat || letter.fileName}_`
-          : '';
-        return `*${idx + 1}. ${snippet}*\n   "${item}"${letterNote}`;
+        const prefix = mode === 'cepat' ? '⚡ [Info Cepat] ' : '';
+        const letterNote =
+          mode === 'surat' && letter
+            ? `\n   📎 _Dilengkapi Surat Resmi: ${letter.perihalSurat || letter.fileName}_`
+            : '';
+        return `*${idx + 1}. ${prefix}${snippet}*\n   "${item}"${letterNote}`;
       })
       .join('\n\n');
 
     const waText =
-      `📢 *PENGUMUMAN PANITIA: ${primarySnippetWords}*\n` +
+      `${primaryAnnouncementMode === 'cepat' ? '⚡ *INFORMASI CEPAT PANITIA:' : '📢 *PENGUMUMAN PANITIA:'} ${primarySnippetWords}*\n` +
       `_Panitia HAB ke-81 Kemenag Kab. Tojo Una-Una Tahun 2027_\n\n` +
       `${bulletAnnouncements}\n\n` +
-      `🔗 *Buka Web Pengumuman & Baca Isi Surat Resmi:*\n${officialStandaloneWebUrl}`;
+      (hasAnyLetterMode
+        ? `🔗 *Buka Web Pengumuman & Baca Isi Surat Resmi:*\n${officialStandaloneWebUrl}`
+        : `🔗 *Buka Papan Informasi Panitia:*\n${officialStandaloneWebUrl}`);
 
     const cardCanvas = await renderAnnouncementWaCardCanvas({
       text: primaryAnnouncementText,
       index: highlightedAnnouncementIndex,
-      letter: announcementLetters[highlightedAnnouncementIndex],
+      letter:
+        primaryAnnouncementMode === 'surat'
+          ? announcementLetters[highlightedAnnouncementIndex]
+          : null,
+      mode: primaryAnnouncementMode,
       logoUrl: branding.kemenagLogoPrimaryUrl || '/Kementerian-Agama.png',
     });
 
@@ -576,16 +645,18 @@ export const PanitiaInfoModal: React.FC<PanitiaInfoModalProps> = ({
   const handleShareSingleAnnouncementToWa = async (text: string, idx: number) => {
     const slug = getAnnouncementUrlSlug(text, 6);
     const snippet = getAnnouncementSnippetWords(text, 6);
+    const itemMode = announcementModes[idx] || 'surat';
     const itemUrl = buildDeepLink({
       halaman: 'pengumuman',
       pengumuman: String(idx + 1),
       redaksi: slug,
     });
-    const letter = announcementLetters[idx];
+    const letter = itemMode === 'surat' ? announcementLetters[idx] : null;
     const waText = formatAnnouncementWhatsAppText({
       text,
       index: idx,
       letter,
+      mode: itemMode,
       url: itemUrl,
     });
 
@@ -593,11 +664,12 @@ export const PanitiaInfoModal: React.FC<PanitiaInfoModalProps> = ({
       text,
       index: idx,
       letter,
+      mode: itemMode,
       logoUrl: branding.kemenagLogoPrimaryUrl || '/Kementerian-Agama.png',
     });
 
     await shareToWhatsAppWithFullImage({
-      title: `Pengumuman #${idx + 1}: ${snippet}`,
+      title: `${itemMode === 'cepat' ? 'Info Cepat' : 'Pengumuman'} #${idx + 1}: ${snippet}`,
       waText,
       canvas: cardCanvas,
       fileName: `pengumuman-${idx + 1}-hab81.jpg`,
@@ -796,7 +868,11 @@ export const PanitiaInfoModal: React.FC<PanitiaInfoModalProps> = ({
                     formatAnnouncementWhatsAppText({
                       text: primaryAnnouncementText,
                       index: highlightedAnnouncementIndex,
-                      letter: announcementLetters[highlightedAnnouncementIndex],
+                      letter:
+                        primaryAnnouncementMode === 'surat'
+                          ? announcementLetters[highlightedAnnouncementIndex]
+                          : null,
+                      mode: primaryAnnouncementMode,
                       url: officialStandaloneWebUrl,
                     }),
                     'official'
@@ -818,7 +894,7 @@ export const PanitiaInfoModal: React.FC<PanitiaInfoModalProps> = ({
               </button>
             </div>
 
-            {/* Link 2: Current Active Server Domain Link (if different from GitHub Pages) */}
+            {/* Link 2: Current Active Server Domain Link (if different from Official Domain) */}
             {currentOriginStandaloneUrl !== officialStandaloneWebUrl && (
               <div className="p-2.5 rounded-xl bg-[#03251c] border border-emerald-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div className="min-w-0 space-y-0.5">
@@ -826,7 +902,7 @@ export const PanitiaInfoModal: React.FC<PanitiaInfoModalProps> = ({
                     Redaksi WA (6 Kata) + Link Server Web Aktif Saat Ini:
                   </span>
                   <div className="text-xs font-bold text-white truncate">
-                    📢 {primarySnippetWords}
+                    {primaryAnnouncementMode === 'cepat' ? '⚡' : '📢'} {primarySnippetWords}
                   </div>
                   <a
                     href={currentOriginStandaloneUrl}
@@ -844,7 +920,11 @@ export const PanitiaInfoModal: React.FC<PanitiaInfoModalProps> = ({
                       formatAnnouncementWhatsAppText({
                         text: primaryAnnouncementText,
                         index: highlightedAnnouncementIndex,
-                        letter: announcementLetters[highlightedAnnouncementIndex],
+                        letter:
+                          primaryAnnouncementMode === 'surat'
+                            ? announcementLetters[highlightedAnnouncementIndex]
+                            : null,
+                        mode: primaryAnnouncementMode,
                         url: currentOriginStandaloneUrl,
                       }),
                       'current'
@@ -908,28 +988,58 @@ export const PanitiaInfoModal: React.FC<PanitiaInfoModalProps> = ({
             )}
           </div>
 
-          {/* Admin Add New Announcement + Optional Word/PDF Letter Form */}
+          {/* Admin Add New Announcement — Pilihan 2 Mode (Informasi Cepat Tanpa Surat vs Dengan Surat Resmi) */}
           {showAdminControls && onUpdateBranding && (
             <form
               onSubmit={handleAddAnnouncement}
               className="p-4 sm:p-5 rounded-xl bg-[#021b15] border-2 border-amber-400/60 space-y-3.5"
             >
-              <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                 <div className="text-xs font-bold text-amber-300">
-                  + Tambah Pengumuman Panitia Baru (Bisa Disertai Upload Surat Word / PDF)
+                  + Tambah Pengumuman Panitia Baru
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setShowNewLetterForm((prev) => !prev)}
-                  className="px-2.5 py-1 rounded-lg bg-emerald-900 hover:bg-emerald-800 border border-amber-400/50 text-amber-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                <div
+                  className="inline-flex rounded-xl bg-[#03251c] p-1 border border-emerald-700/80 gap-1"
+                  role="group"
+                  aria-label="Pilih Jenis Pengumuman"
                 >
-                  <Paperclip className="w-3 h-3" />
+                  <button
+                    type="button"
+                    onClick={() => setNewAnnouncementMode('cepat')}
+                    className={`px-3 py-1.5 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition cursor-pointer ${
+                      newAnnouncementMode === 'cepat'
+                        ? 'bg-emerald-500 text-slate-950 shadow'
+                        : 'text-emerald-200 hover:bg-emerald-900/60'
+                    }`}
+                  >
+                    <Zap className="w-3.5 h-3.5" />
+                    <span>Informasi Cepat (Tanpa Surat)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewAnnouncementMode('surat')}
+                    className={`px-3 py-1.5 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition cursor-pointer ${
+                      newAnnouncementMode === 'surat'
+                        ? 'bg-amber-400 text-slate-950 shadow'
+                        : 'text-amber-200 hover:bg-emerald-900/60'
+                    }`}
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>Dengan Surat Resmi</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="text-[11px] text-slate-300 bg-[#03251c]/70 border border-emerald-800/70 rounded-lg px-3 py-2">
+                {newAnnouncementMode === 'cepat' ? (
                   <span>
-                    {showNewLetterForm
-                      ? 'Sembunyikan Form Upload Surat'
-                      : '+ Lampirkan Surat Resmi (.PDF / .DOCX / .DOC)'}
+                    Mode <strong className="text-emerald-300">Informasi Cepat</strong>: Pengumuman tampil ringkas tanpa kotak lembar surat dan tanpa tombol unduh surat.
                   </span>
-                </button>
+                ) : (
+                  <span>
+                    Mode <strong className="text-amber-300">Dengan Surat Resmi</strong>: Pengumuman dilengkapi kotak lembar surat resmi panitia serta fasilitas lampiran PDF/Word &amp; unduh surat.
+                  </span>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -940,12 +1050,16 @@ export const PanitiaInfoModal: React.FC<PanitiaInfoModalProps> = ({
                   rows={2}
                   value={newAnnouncementText}
                   onChange={(e) => setNewAnnouncementText(e.target.value)}
-                  placeholder="Ketik isi pengumuman resmi panitia di sini..."
+                  placeholder={
+                    newAnnouncementMode === 'cepat'
+                      ? 'Ketik informasi cepat / imbauan singkat panitia di sini...'
+                      : 'Ketik isi pengumuman resmi panitia di sini...'
+                  }
                   className="w-full px-3 py-2 rounded-lg bg-[#03251c] border border-emerald-700 text-white text-xs sm:text-sm focus:outline-none focus:border-amber-400"
                 />
               </div>
 
-              {showNewLetterForm && (
+              {newAnnouncementMode === 'surat' && (
                 <div className="p-3.5 rounded-xl bg-[#03251c] border border-emerald-700/90 space-y-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
@@ -1053,10 +1167,18 @@ export const PanitiaInfoModal: React.FC<PanitiaInfoModalProps> = ({
               <div className="flex justify-end">
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow"
+                  className={`px-4 py-2 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow ${
+                    newAnnouncementMode === 'cepat'
+                      ? 'bg-emerald-400 hover:bg-emerald-300 text-slate-950'
+                      : 'bg-amber-400 hover:bg-amber-300 text-slate-950'
+                  }`}
                 >
                   <Plus className="w-3.5 h-3.5" />
-                  <span>✓ Simpan Pengumuman & Surat</span>
+                  <span>
+                    {newAnnouncementMode === 'cepat'
+                      ? '✓ Simpan Informasi Cepat'
+                      : '✓ Simpan Pengumuman & Surat'}
+                  </span>
                 </button>
               </div>
             </form>
@@ -1076,7 +1198,8 @@ export const PanitiaInfoModal: React.FC<PanitiaInfoModalProps> = ({
             ) : (
               announcements.map((item, index) => {
               const isEditingThis = showAdminControls && editingIndex === index;
-              const attachedLetter = announcementLetters[index];
+              const itemMode = announcementModes[index] || 'surat';
+              const attachedLetter = itemMode === 'surat' ? announcementLetters[index] : null;
               const itemSnippetWords = getAnnouncementSnippetWords(item, 6);
               const itemSlug = getAnnouncementUrlSlug(item, 6);
               const singleItemUrl = buildDeepLink({
@@ -1088,6 +1211,7 @@ export const PanitiaInfoModal: React.FC<PanitiaInfoModalProps> = ({
                 text: item,
                 index,
                 letter: attachedLetter,
+                mode: itemMode,
                 url: singleItemUrl,
               });
               const isHighlighted = index === highlightedAnnouncementIndex;
@@ -1097,19 +1221,48 @@ export const PanitiaInfoModal: React.FC<PanitiaInfoModalProps> = ({
                   key={index}
                   className={`p-4 sm:p-5 rounded-xl bg-[#021b15]/95 border flex flex-col gap-3.5 ${
                     isHighlighted
-                      ? 'border-amber-400/90 shadow-lg shadow-amber-950/30'
+                      ? itemMode === 'cepat'
+                        ? 'border-emerald-400/90 shadow-lg shadow-emerald-950/30'
+                        : 'border-amber-400/90 shadow-lg shadow-amber-950/30'
                       : 'border-emerald-800/80'
                   }`}
                 >
                   {isEditingThis ? (
                     <div className="space-y-3.5">
-                      <div className="flex items-center justify-between border-b border-emerald-800 pb-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-800 pb-2">
                         <div className="text-xs font-bold text-amber-300">
-                          Edit Pengumuman #{index + 1} & Lampiran Surat Resmi (Word / PDF)
+                          Edit Pengumuman #{index + 1}
                         </div>
-                        <span className="text-[11px] text-emerald-300">
-                          Klik Simpan Perubahan setelah selesai
-                        </span>
+                        <div
+                          className="inline-flex rounded-xl bg-[#03251c] p-1 border border-emerald-700/80 gap-1"
+                          role="group"
+                          aria-label="Ubah Jenis Pengumuman"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => setEditAnnouncementMode('cepat')}
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 transition cursor-pointer ${
+                              editAnnouncementMode === 'cepat'
+                                ? 'bg-emerald-500 text-slate-950 shadow'
+                                : 'text-emerald-200 hover:bg-emerald-900/60'
+                            }`}
+                          >
+                            <Zap className="w-3 h-3" />
+                            <span>Informasi Cepat (Tanpa Surat)</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditAnnouncementMode('surat')}
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 transition cursor-pointer ${
+                              editAnnouncementMode === 'surat'
+                                ? 'bg-amber-400 text-slate-950 shadow'
+                                : 'text-amber-200 hover:bg-emerald-900/60'
+                            }`}
+                          >
+                            <FileText className="w-3 h-3" />
+                            <span>Dengan Surat Resmi</span>
+                          </button>
+                        </div>
                       </div>
 
                       <div className="space-y-1">
@@ -1124,8 +1277,16 @@ export const PanitiaInfoModal: React.FC<PanitiaInfoModalProps> = ({
                         />
                       </div>
 
-                      {/* Letter Attachment Editor inside Announcement Edit */}
-                      <div className="p-3.5 rounded-xl bg-[#03251c] border border-amber-400/40 space-y-3">
+                      {/* Letter Attachment Editor — Only visible when mode === 'surat' */}
+                      {editAnnouncementMode === 'cepat' ? (
+                        <div className="p-3 rounded-xl bg-[#03251c]/80 border border-emerald-700/80 text-[11px] text-emerald-200 flex items-center gap-2">
+                          <Zap className="w-4 h-4 text-emerald-400 shrink-0" />
+                          <span>
+                            Pengumuman ini diatur sebagai <strong>Informasi Cepat (Tanpa Surat)</strong>. Kotak lembar surat dan tombol unduh surat akan disembunyikan dari tampilan publik.
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="p-3.5 rounded-xl bg-[#03251c] border border-amber-400/40 space-y-3">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <span className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
                             <Paperclip className="w-3.5 h-3.5" />
@@ -1237,6 +1398,7 @@ export const PanitiaInfoModal: React.FC<PanitiaInfoModalProps> = ({
                           />
                         </div>
                       </div>
+                      )}
 
                       <div className="flex items-center justify-end gap-2">
                         <button
@@ -1264,19 +1426,44 @@ export const PanitiaInfoModal: React.FC<PanitiaInfoModalProps> = ({
                     <>
                       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
                         <div className="flex items-start gap-3 flex-1 min-w-0">
-                          <span className="w-7 h-7 rounded-lg bg-amber-400 text-slate-950 font-extrabold text-xs flex items-center justify-center shrink-0 mt-0.5">
+                          <span
+                            className={`w-7 h-7 rounded-lg font-extrabold text-xs flex items-center justify-center shrink-0 mt-0.5 ${
+                              itemMode === 'cepat'
+                                ? 'bg-emerald-400 text-slate-950'
+                                : 'bg-amber-400 text-slate-950'
+                            }`}
+                          >
                             {index + 1}
                           </span>
                           <div className="space-y-2.5 flex-1 min-w-0">
-                            <div className="inline-flex flex-wrap items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-400/15 border border-amber-400/40 text-amber-300 text-xs font-extrabold">
-                              <span>📢 Ringkasan Redaksi WA:</span>
-                              <span className="text-white">&ldquo;{itemSnippetWords}&rdquo;</span>
+                            <div className="flex flex-wrap items-center gap-2">
+                              {itemMode === 'cepat' && (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-500/20 border border-emerald-400/60 text-emerald-300 text-[11px] font-extrabold uppercase tracking-wide">
+                                  <Zap className="w-3 h-3" />
+                                  <span>Informasi Cepat</span>
+                                </span>
+                              )}
+                              <div
+                                className={`inline-flex flex-wrap items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-extrabold ${
+                                  itemMode === 'cepat'
+                                    ? 'bg-emerald-950/90 border border-emerald-700/80 text-emerald-300'
+                                    : 'bg-amber-400/15 border border-amber-400/40 text-amber-300'
+                                }`}
+                              >
+                                <span>
+                                  {itemMode === 'cepat'
+                                    ? '⚡ Ringkasan Info WA:'
+                                    : '📢 Ringkasan Redaksi WA:'}
+                                </span>
+                                <span className="text-white">&ldquo;{itemSnippetWords}&rdquo;</span>
+                              </div>
                             </div>
                             <p className="text-sm sm:text-base text-white leading-relaxed font-medium break-words">
                               {item}
                             </p>
 
-                            {/* Always-available User Actions: Lihat Isi Surat Langsung di Halaman Web & Unduh Surat */}
+                            {/* Letter Actions Box — Only shown when announcement mode is 'surat' */}
+                            {itemMode === 'surat' && (
                             <div className="p-3 rounded-xl bg-[#03251c] border border-amber-400/50 flex flex-col gap-3">
                               <div className="flex items-start gap-2.5 min-w-0">
                                 <div className="p-2 rounded-lg bg-amber-400/15 border border-amber-400/40 text-amber-300 shrink-0">
@@ -1367,9 +1554,10 @@ export const PanitiaInfoModal: React.FC<PanitiaInfoModalProps> = ({
                                 )}
                               </div>
                             </div>
+                            )}
 
-                            {/* Direct Inline Letter Viewer on the Web Page */}
-                            {inlineLetterIndex === index && (
+                            {/* Direct Inline Letter Viewer on the Web Page (only for mode === 'surat') */}
+                            {itemMode === 'surat' && inlineLetterIndex === index && (
                               <div className="mt-2 bg-white text-slate-900 rounded-xl p-5 sm:p-7 shadow-xl border-2 border-amber-400 space-y-4">
                                 {/* Official Kemenag Letterhead */}
                                 <div className="border-b-2 border-slate-900 pb-3.5 flex items-center gap-3.5">
@@ -1507,13 +1695,48 @@ export const PanitiaInfoModal: React.FC<PanitiaInfoModalProps> = ({
                             <>
                               <button
                                 type="button"
+                                onClick={() => handleQuickToggleMode(index)}
+                                className={`px-2.5 py-1.5 rounded-lg border text-[11px] font-bold flex items-center gap-1 cursor-pointer ${
+                                  itemMode === 'cepat'
+                                    ? 'bg-emerald-900/70 hover:bg-emerald-800 border-emerald-500/50 text-emerald-200'
+                                    : 'bg-emerald-950/90 hover:bg-emerald-900 border-emerald-700 text-emerald-300'
+                                }`}
+                                title={
+                                  itemMode === 'cepat'
+                                    ? 'Ubah pengumuman ini agar menampilkan Lembar Surat Resmi'
+                                    : 'Ubah pengumuman ini menjadi Informasi Cepat (tanpa kotak surat)'
+                                }
+                              >
+                                {itemMode === 'cepat' ? (
+                                  <>
+                                    <FileText className="w-3 h-3 text-amber-300" />
+                                    <span>Pakai Surat</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Zap className="w-3 h-3 text-emerald-300" />
+                                    <span>Tanpa Surat</span>
+                                  </>
+                                )}
+                              </button>
+                              <button
+                                type="button"
                                 onClick={() => openEditorForAnnouncement(index, item)}
                                 className="px-2.5 py-1.5 rounded-lg bg-amber-400/20 hover:bg-amber-400/30 border border-amber-400/50 text-amber-300 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
                               >
-                                <Paperclip className="w-3 h-3" />
-                                <span>
-                                  {attachedLetter ? 'Edit / Ganti Surat' : '+ Upload Surat'}
-                                </span>
+                                {itemMode === 'cepat' ? (
+                                  <>
+                                    <Edit3 className="w-3 h-3" />
+                                    <span>Edit Info</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Paperclip className="w-3 h-3" />
+                                    <span>
+                                      {attachedLetter ? 'Edit / Ganti Surat' : 'Edit / + Upload Surat'}
+                                    </span>
+                                  </>
+                                )}
                               </button>
                               <button
                                 type="button"

@@ -161,6 +161,8 @@ export interface WelcomeVoiceConfig {
   audioUrl: string;
 }
 
+export type AnnouncementMode = 'surat' | 'cepat';
+
 export interface AnnouncementLetter {
   id: string;
   fileName: string;
@@ -193,6 +195,7 @@ export interface BrandingConfig {
   countdownTargetIso: string; // Default: 2027-01-03T07:30:00+08:00
   runningTextItems: string[];
   announcementLetters?: (AnnouncementLetter | null)[];
+  announcementModes?: AnnouncementMode[]; // Parallel to runningTextItems ('surat' = default untuk pengumuman lama, 'cepat' = informasi cepat tanpa surat)
   allowCustomCompetitionProposal: boolean;
   isCouponRegistrationOpen?: boolean; // Toggle ON/OFF pendaftaran kupon jalan sehat (Default: true)
   couponRegistrationClosedMessage?: string; // Pesan saat pendaftaran kupon ditutup oleh admin

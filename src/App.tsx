@@ -516,6 +516,9 @@ export default function App() {
                       announcementLetters: Array.isArray(incomingBranding.announcementLetters)
                         ? incomingBranding.announcementLetters
                         : [],
+                      announcementModes: Array.isArray(incomingBranding.announcementModes)
+                        ? incomingBranding.announcementModes
+                        : [],
                       navLabels: {
                         ...(prev.branding.navLabels || DEFAULT_APP_STATE.branding.navLabels!),
                         ...(incomingBranding.navLabels || {}),

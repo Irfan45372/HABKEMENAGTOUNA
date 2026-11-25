@@ -3,7 +3,7 @@
  * and sharing full-resolution images + links directly to WhatsApp.
  */
 
-export const OFFICIAL_GITHUB_PAGES_URL = 'https://irfan45372.github.io/HABKEMENAGTOUNA/';
+export const OFFICIAL_GITHUB_PAGES_URL = 'https://hab-kemenag-touna.ai.studio/';
 
 export function buildDeepLink(params: Record<string, string | null | undefined>): string {
   try {
@@ -119,24 +119,45 @@ export async function shareToWhatsAppWithFullImage(options: {
   canvas?: HTMLCanvasElement | null;
   fileName?: string;
 }): Promise<'shared_native' | 'opened_wa'> {
-  const { title, waText, imageSrc, canvas, fileName = 'hab81-kemenag-touna.jpg' } = options;
+  const {
+    title,
+    waText,
+    imageSrc = '/og-kemenag.jpg',
+    canvas,
+    fileName = 'hab81-kemenag-touna.jpg',
+  } = options;
 
   try {
-    if (typeof navigator !== 'undefined' && navigator.share) {
-      let file: File | null = null;
-      if (canvas) {
-        file = await canvasToJpegFile(canvas, fileName);
-      } else if (imageSrc) {
-        file = await imageSourceToJpegFile(imageSrc, fileName);
-      }
+    let file: File | null = null;
+    if (canvas) {
+      file = await canvasToJpegFile(canvas, fileName);
+    } else if (imageSrc) {
+      file = await imageSourceToJpegFile(imageSrc, fileName);
+    }
 
-      if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+    if (typeof navigator !== 'undefined' && navigator.share && file) {
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
         await navigator.share({
           title,
           text: waText,
           files: [file],
         });
         return 'shared_native';
+      }
+    }
+
+    // Desktop fallback: if a visual card canvas was rendered, also copy the PNG image to clipboard
+    // so desktop WhatsApp Web users can simply press Ctrl+V if they want the full card image attachment
+    if (canvas && typeof navigator !== 'undefined' && navigator.clipboard && 'write' in navigator.clipboard && typeof ClipboardItem !== 'undefined') {
+      try {
+        const pngBlob = await new Promise<Blob | null>((resolve) =>
+          canvas.toBlob((b) => resolve(b), 'image/png')
+        );
+        if (pngBlob) {
+          await navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob })]);
+        }
+      } catch {
+        // Ignore clipboard image permission errors on browsers that block it
       }
     }
   } catch (err) {

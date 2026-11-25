@@ -1,4 +1,16 @@
-import { AnnouncementLetter } from '../types/hab';
+import { AnnouncementLetter, AnnouncementMode } from '../types/hab';
+
+/**
+ * Resolves the announcement mode for a given index.
+ * Backward-compatible: existing announcements without an explicit mode default to 'surat'
+ * so they keep displaying the letter section until Admin switches them manually.
+ */
+export function getAnnouncementMode(
+  modes: AnnouncementMode[] | undefined,
+  index: number
+): AnnouncementMode {
+  return modes?.[index] === 'cepat' ? 'cepat' : 'surat';
+}
 
 /**
  * Extracts readable paragraphs from a .docx (ZIP containing word/document.xml)
@@ -242,11 +254,21 @@ export function formatAnnouncementWhatsAppText(options: {
   text: string;
   index?: number;
   letter?: AnnouncementLetter | null;
+  mode?: AnnouncementMode;
   url: string;
 }): string {
-  const { text, index, letter, url } = options;
+  const { text, index, letter, mode = 'surat', url } = options;
   const snippet = getAnnouncementSnippetWords(text, 6);
   const numLabel = index !== undefined ? ` #${index + 1}` : '';
+
+  if (mode === 'cepat') {
+    return (
+      `⚡ *INFORMASI CEPAT PANITIA${numLabel}: ${snippet}*\n` +
+      `_${text.trim()}_\n` +
+      `\n🔗 *Buka Papan Informasi Panitia:*\n${url}`
+    );
+  }
+
   const letterInfo = letter
     ? `\n📎 *Lampiran Surat Resmi:* ${letter.perihalSurat || letter.fileName}${
         letter.nomorSurat ? ` (No: ${letter.nomorSurat})` : ''
@@ -269,9 +291,10 @@ export async function renderAnnouncementWaCardCanvas(options: {
   text: string;
   index?: number;
   letter?: AnnouncementLetter | null;
+  mode?: AnnouncementMode;
   logoUrl?: string;
 }): Promise<HTMLCanvasElement> {
-  const { text, index, letter, logoUrl = '/Kementerian-Agama.png' } = options;
+  const { text, index, letter, mode = 'surat', logoUrl = '/Kementerian-Agama.png' } = options;
   const canvas = document.createElement('canvas');
   const W = 720;
   const H = 820;
@@ -300,14 +323,18 @@ export async function renderAnnouncementWaCardCanvas(options: {
   ctx.fillStyle = '#06372a';
   ctx.fillRect(0, 500, W, H - 500);
 
-  ctx.fillStyle = '#fbbf24';
+  ctx.fillStyle = mode === 'cepat' ? '#34d399' : '#fbbf24';
   ctx.fillRect(0, 500, W, 6);
 
   // Badge line
-  ctx.fillStyle = '#fde68a';
+  ctx.fillStyle = mode === 'cepat' ? '#a7f3d0' : '#fde68a';
   ctx.font = '700 18px "Plus Jakarta Sans", sans-serif';
   const badgeText =
-    index !== undefined
+    mode === 'cepat'
+      ? index !== undefined
+        ? `INFORMASI CEPAT PANITIA HAB KE-81 #${index + 1}`
+        : 'INFORMASI CEPAT PANITIA HAB KE-81 KEMENAG TOJO UNA-UNA'
+      : index !== undefined
       ? `PENGUMUMAN PANITIA HAB KE-81 #${index + 1}${letter ? ' • LAMPIRAN SURAT RESMI' : ''}`
       : 'PENGUMUMAN RESMI PANITIA HAB KE-81 KEMENAG TOJO UNA-UNA';
   ctx.fillText(badgeText, 32, 542);
@@ -357,7 +384,7 @@ export async function renderAnnouncementWaCardCanvas(options: {
   // Domain footer
   ctx.fillStyle = '#94a3b8';
   ctx.font = '600 17px "Plus Jakarta Sans", sans-serif';
-  ctx.fillText('irfan45372.github.io • Humas Kemenag Kab. Tojo Una-Una', 32, H - 24);
+  ctx.fillText('hab-kemenag-touna.ai.studio • Humas Kemenag Kab. Tojo Una-Una', 32, H - 24);
 
   return canvas;
 }

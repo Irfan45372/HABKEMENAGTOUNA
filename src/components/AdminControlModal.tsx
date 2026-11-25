@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
+  AnnouncementMode,
   AppState,
   BaksosMetric,
   Competition,
@@ -16,6 +17,7 @@ import {
   VenueLocation,
   VideoItem,
 } from '../types/hab';
+import { getAnnouncementMode } from '../utils/letterUtils';
 import { DEFAULT_APP_STATE } from '../data/defaultState';
 import {
   ALLOW_VIDEO_FILE_UPLOAD,
@@ -41,6 +43,7 @@ import {
   Upload,
   Video,
   X,
+  Zap,
 } from 'lucide-react';
 import {
   ADMIN_EMAIL,
@@ -195,8 +198,9 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
   const [newBannerKet, setNewBannerKet] = useState('');
   const [editingBannerId, setEditingBannerId] = useState<string | null>(null);
 
-  // Tab 5: New Running Text State
+  // Tab 5: New Running Text State + 2-Mode Selector ('cepat' | 'surat')
   const [newTickerInput, setNewTickerInput] = useState('');
+  const [newTickerMode, setNewTickerMode] = useState<AnnouncementMode>('cepat');
 
   if (!isOpen) return null;
 
@@ -4032,82 +4036,205 @@ export const AdminControlModal: React.FC<AdminControlModalProps> = ({
                       );
                     })()}
 
-                    {/* Running Text Ticker CRUD (Add, Inline Edit & Delete) */}
-                    <div className="pt-3 border-t border-emerald-800 space-y-2">
-                      <label className="block text-xs font-bold text-amber-300">
-                        Running Text Pengumuman Penting (Top Ticker) — Tambah, Edit & Hapus
-                      </label>
+                    {/* Running Text Ticker CRUD (Add, Inline Edit, 2-Mode Toggle & Delete) */}
+                    <div className="pt-3 border-t border-emerald-800 space-y-2.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <label className="block text-xs font-bold text-amber-300">
+                          Pengumuman Papan Informasi &amp; Running Text — Tambah, Edit, Pilih Mode &amp; Hapus
+                        </label>
+                        <div
+                          className="inline-flex rounded-lg bg-[#03251c] p-0.5 border border-emerald-700/80 gap-0.5"
+                          role="group"
+                          aria-label="Pilih Mode Pengumuman Baru"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => setNewTickerMode('cepat')}
+                            className={`px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 cursor-pointer ${
+                              newTickerMode === 'cepat'
+                                ? 'bg-emerald-500 text-slate-950'
+                                : 'text-emerald-200 hover:bg-emerald-900/60'
+                            }`}
+                          >
+                            <Zap className="w-3 h-3" />
+                            <span>Info Cepat (Tanpa Surat)</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setNewTickerMode('surat')}
+                            className={`px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 cursor-pointer ${
+                              newTickerMode === 'surat'
+                                ? 'bg-amber-400 text-slate-950'
+                                : 'text-amber-200 hover:bg-emerald-900/60'
+                            }`}
+                          >
+                            <FileText className="w-3 h-3" />
+                            <span>Dengan Surat</span>
+                          </button>
+                        </div>
+                      </div>
                       <div className="flex gap-2">
                         <input
                           type="text"
                           value={newTickerInput}
                           onChange={(e) => setNewTickerInput(e.target.value)}
-                          placeholder="Tambahkan pengumuman kilat panitia..."
+                          placeholder={
+                            newTickerMode === 'cepat'
+                              ? 'Tambahkan informasi cepat panitia (tanpa kotak surat)...'
+                              : 'Tambahkan pengumuman resmi panitia (dengan lembar surat)...'
+                          }
                           className="flex-1 px-3 py-1.5 rounded-lg bg-[#03251c] border border-emerald-700 text-xs text-white"
                         />
                         <button
                           type="button"
                           onClick={() => {
                             if (!newTickerInput.trim()) return;
-                            onUpdateState((prev) => ({
-                              ...prev,
-                              branding: {
-                                ...prev.branding,
-                                runningTextItems: [
-                                  newTickerInput.trim(),
-                                  ...prev.branding.runningTextItems,
-                                ],
-                              },
-                            }));
+                            onUpdateState((prev) => {
+                              const prevItems = prev.branding.runningTextItems;
+                              const prevLetters = prevItems.map(
+                                (_, i) => prev.branding.announcementLetters?.[i] || null
+                              );
+                              const prevModes = prevItems.map((_, i) =>
+                                getAnnouncementMode(prev.branding.announcementModes, i)
+                              );
+                              return {
+                                ...prev,
+                                branding: {
+                                  ...prev.branding,
+                                  runningTextItems: [newTickerInput.trim(), ...prevItems],
+                                  announcementLetters: [null, ...prevLetters],
+                                  announcementModes: [newTickerMode, ...prevModes],
+                                },
+                              };
+                            });
                             setNewTickerInput('');
-                            notify('Running text pengumuman ditambahkan.');
+                            notify(
+                              newTickerMode === 'cepat'
+                                ? 'Informasi Cepat (tanpa surat) ditambahkan.'
+                                : 'Pengumuman (dengan surat resmi) ditambahkan.'
+                            );
                           }}
-                          className="px-3 py-1.5 rounded-lg bg-amber-400 text-slate-950 font-bold text-xs cursor-pointer"
+                          className={`px-3 py-1.5 rounded-lg font-bold text-xs cursor-pointer shrink-0 ${
+                            newTickerMode === 'cepat'
+                              ? 'bg-emerald-400 text-slate-950'
+                              : 'bg-amber-400 text-slate-950'
+                          }`}
                         >
                           + Tambah
                         </button>
                       </div>
-                      <div className="space-y-1.5 max-h-36 overflow-y-auto">
-                        {appState.branding.runningTextItems.map((item, idx) => (
-                          <div
-                            key={idx}
-                            className="bg-[#03251c] px-2.5 py-1.5 rounded text-xs flex items-center justify-between gap-2"
-                          >
-                            <input
-                              type="text"
-                              value={item}
-                              onChange={(e) =>
-                                onUpdateState((prev) => ({
-                                  ...prev,
-                                  branding: {
-                                    ...prev.branding,
-                                    runningTextItems: prev.branding.runningTextItems.map(
-                                      (txt, i) => (i === idx ? e.target.value : txt)
-                                    ),
-                                  },
-                                }))
-                              }
-                              className="flex-1 px-2 py-1 rounded bg-[#021b15] border border-emerald-800 text-xs text-slate-200"
-                            />
-                            <button
-                              type="button"
-                              onClick={() =>
-                                onUpdateState((prev) => ({
-                                  ...prev,
-                                  branding: {
-                                    ...prev.branding,
-                                    runningTextItems: prev.branding.runningTextItems.filter(
-                                      (_, i) => i !== idx
-                                    ),
-                                  },
-                                }))
-                              }
-                              className="text-rose-400 shrink-0 cursor-pointer px-1.5"
+                      <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                        {appState.branding.runningTextItems.map((item, idx) => {
+                          const rowMode = getAnnouncementMode(
+                            appState.branding.announcementModes,
+                            idx
+                          );
+                          return (
+                            <div
+                              key={idx}
+                              className="bg-[#03251c] px-2.5 py-1.5 rounded text-xs flex items-center justify-between gap-2"
                             >
-                              Hapus
-                            </button>
-                          </div>
-                        ))}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const nextMode: AnnouncementMode =
+                                    rowMode === 'surat' ? 'cepat' : 'surat';
+                                  onUpdateState((prev) => {
+                                    const alignedModes = prev.branding.runningTextItems.map(
+                                      (_, i) =>
+                                        i === idx
+                                          ? nextMode
+                                          : getAnnouncementMode(
+                                              prev.branding.announcementModes,
+                                              i
+                                            )
+                                    );
+                                    return {
+                                      ...prev,
+                                      branding: {
+                                        ...prev.branding,
+                                        announcementModes: alignedModes,
+                                      },
+                                    };
+                                  });
+                                  notify(
+                                    nextMode === 'cepat'
+                                      ? `Pengumuman #${idx + 1} diubah ke Informasi Cepat (Tanpa Surat).`
+                                      : `Pengumuman #${idx + 1} diubah ke Dengan Surat Resmi.`
+                                  );
+                                }}
+                                title={
+                                  rowMode === 'cepat'
+                                    ? 'Klik untuk ubah ke mode Dengan Surat Resmi'
+                                    : 'Klik untuk ubah ke mode Informasi Cepat (Tanpa Surat)'
+                                }
+                                className={`px-2 py-1 rounded text-[10px] font-extrabold shrink-0 flex items-center gap-1 cursor-pointer border ${
+                                  rowMode === 'cepat'
+                                    ? 'bg-emerald-500/20 border-emerald-400/60 text-emerald-300 hover:bg-emerald-500/30'
+                                    : 'bg-amber-400/15 border-amber-400/50 text-amber-300 hover:bg-amber-400/25'
+                                }`}
+                              >
+                                {rowMode === 'cepat' ? (
+                                  <>
+                                    <Zap className="w-3 h-3" />
+                                    <span>Info Cepat</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <FileText className="w-3 h-3" />
+                                    <span>Surat Resmi</span>
+                                  </>
+                                )}
+                              </button>
+                              <input
+                                type="text"
+                                value={item}
+                                onChange={(e) =>
+                                  onUpdateState((prev) => ({
+                                    ...prev,
+                                    branding: {
+                                      ...prev.branding,
+                                      runningTextItems: prev.branding.runningTextItems.map(
+                                        (txt, i) => (i === idx ? e.target.value : txt)
+                                      ),
+                                    },
+                                  }))
+                                }
+                                className="flex-1 min-w-0 px-2 py-1 rounded bg-[#021b15] border border-emerald-800 text-xs text-slate-200"
+                              />
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  onUpdateState((prev) => {
+                                    const prevItems = prev.branding.runningTextItems;
+                                    const alignedLetters = prevItems.map(
+                                      (_, i) => prev.branding.announcementLetters?.[i] || null
+                                    );
+                                    const alignedModes = prevItems.map((_, i) =>
+                                      getAnnouncementMode(prev.branding.announcementModes, i)
+                                    );
+                                    return {
+                                      ...prev,
+                                      branding: {
+                                        ...prev.branding,
+                                        runningTextItems: prevItems.filter((_, i) => i !== idx),
+                                        announcementLetters: alignedLetters.filter(
+                                          (_, i) => i !== idx
+                                        ),
+                                        announcementModes: alignedModes.filter(
+                                          (_, i) => i !== idx
+                                        ),
+                                      },
+                                    };
+                                  })
+                                }
+                                className="text-rose-400 shrink-0 cursor-pointer px-1.5"
+                              >
+                                Hapus
+                              </button>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   </div>

@@ -376,7 +376,7 @@ export const JalanSehatTwibbonSection: React.FC<JalanSehatTwibbonSectionProps> =
       if (!ctx) return;
 
       // QR Code depends EXCLUSIVELY on activeCoupon.nomorKupon so editing name/NIP never changes the barcode!
-      const baseSiteUrl = 'https://irfan45372.github.io/HABKEMENAGTOUNA/';
+      const baseSiteUrl = 'https://hab-kemenag-touna.ai.studio/';
       const qrPayloadUrl = `${baseSiteUrl}?kupon=${encodeURIComponent(activeCoupon.nomorKupon)}#jalan-sehat`;
       const realQrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=210x210&margin=0&color=022c22&bgcolor=ffffff&data=${encodeURIComponent(
         qrPayloadUrl
