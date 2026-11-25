@@ -3,7 +3,7 @@
  * and sharing full-resolution images + links directly to WhatsApp.
  */
 
-export const OFFICIAL_GITHUB_PAGES_URL = 'https://hab-kemenag-touna.ai.studio/';
+export const OFFICIAL_GITHUB_PAGES_URL = 'https://habkemenagtouna.com/';
 
 export function buildDeepLink(params: Record<string, string | null | undefined>): string {
   try {

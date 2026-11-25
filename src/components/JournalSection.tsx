@@ -337,7 +337,7 @@ export const JournalSection: React.FC<JournalSectionProps> = ({
   }, [activeArticle]);
 
   const getArticleShareUrl = (articleId: string): string => {
-    return `https://hab-kemenag-touna.ai.studio/?jurnal=${encodeURIComponent(articleId)}`;
+    return `https://habkemenagtouna.com/?jurnal=${encodeURIComponent(articleId)}`;
   };
 
   const buildWhatsAppShareText = (article: JournalArticle): string => {

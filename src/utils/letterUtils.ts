@@ -384,7 +384,7 @@ export async function renderAnnouncementWaCardCanvas(options: {
   // Domain footer
   ctx.fillStyle = '#94a3b8';
   ctx.font = '600 17px "Plus Jakarta Sans", sans-serif';
-  ctx.fillText('hab-kemenag-touna.ai.studio • Humas Kemenag Kab. Tojo Una-Una', 32, H - 24);
+  ctx.fillText('habkemenagtouna.com • Humas Kemenag Kab. Tojo Una-Una', 32, H - 24);
 
   return canvas;
 }
